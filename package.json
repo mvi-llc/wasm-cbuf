@@ -1,0 +1,30 @@
+{
+  "name": "wasm-cbuf",
+  "version": "0.0.1",
+  "main": "dist/index.js",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "Metaverse Industries LLC",
+    "email": "john@metaverseindustries.llc"
+  },
+  "repository": "MetaverseIndustries/wasm-cbuf",
+  "files": [
+    "dist/index.d.ts",
+    "dist/index.js",
+    "dist/wasm-cbuf.js",
+    "dist/wasm-cbuf.wasm"
+  ],
+  "scripts": {
+    "build": "./docker-build.sh",
+    "prepack": "npm run build",
+    "test": "mocha"
+  },
+  "devDependencies": {
+    "eslint": "8.34.0",
+    "mocha": "10.2.0",
+    "prettier": "2.8.4"
+  },
+  "dependencies": {
+    "@foxglove/message-definition": "^0.2.0"
+  }
+}

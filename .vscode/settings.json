@@ -1,0 +1,10 @@
+{
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
+  "[cpp]": {
+    "editor.defaultFormatter": "xaver.clang-format"
+  },
+  "files.eol": "\n",
+  "C_Cpp.autoAddFileAssociations": false,
+  "cmake.sourceDirectory": "${workspaceFolder}/vendor/cbuf"
+}
