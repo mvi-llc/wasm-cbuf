@@ -1,11 +1,49 @@
 process.env.NODE_ENV = "test"
 
+const { readFileSync } = require("fs")
 const assert = require("assert")
 const Cbuf = require("../")
+
+const serialized = new Uint8Array(readFileSync(`${__dirname}/serialized.cb`))
 
 describe("parsing", () => {
   it("waits until module is ready", (done) => {
     Cbuf.isLoaded.then(done)
+  })
+
+  it("parses the metadata.cbuf definition", async () => {
+    await Cbuf.isLoaded
+
+    const result = Cbuf.parseCBufSchema(`
+namespace cbufmsg
+{
+    // Metadata used to be able to recreate cbuf messages
+    struct metadata
+    {
+        u64    msg_hash;
+        string msg_name;
+        string msg_meta;
+    }
+}    
+`)
+
+    assert.equal(result.schema.size, 1)
+
+    const metadata = result.schema.get("cbufmsg::metadata")
+    assert.deepStrictEqual(metadata, {
+      name: "cbufmsg::metadata",
+      hashValue: 13719997278438781638n,
+      line: 6,
+      column: 5,
+      naked: false,
+      simple: false,
+      hasCompact: false,
+      definitions: [
+        { name: "msg_hash", type: "uint64" },
+        { name: "msg_name", type: "string" },
+        { name: "msg_meta", type: "string" },
+      ],
+    })
   })
 
   it("parses all cbuf schema features", async () => {
@@ -61,6 +99,101 @@ namespace messages {
   }
 }
 `)
-    console.dir(result, { depth: 10 })
+
+    assert.equal(result.schema.size, 3)
+
+    const globalStruct = result.schema.get("GlobalStruct")
+    const localStruct = result.schema.get("messages::LocalStruct")
+    const test = result.schema.get("messages::test")
+
+    assert.deepStrictEqual(globalStruct, {
+      name: "GlobalStruct",
+      hashValue: 10441124924358324479n,
+      line: 13,
+      column: 21,
+      naked: false,
+      simple: true,
+      hasCompact: false,
+      definitions: [{ name: "x", type: "uint32" }],
+    })
+
+    assert.deepStrictEqual(localStruct, {
+      name: "messages::LocalStruct",
+      hashValue: 13251862435611663173n,
+      line: 23,
+      column: 22,
+      naked: true,
+      simple: true,
+      hasCompact: false,
+      definitions: [{ name: "x", type: "uint32" }],
+    })
+
+    assert.deepStrictEqual(test, {
+      name: "messages::test",
+      hashValue: 10424965189645813154n,
+      line: 27,
+      column: 15,
+      naked: false,
+      simple: false,
+      hasCompact: true,
+      definitions: [
+        { name: "a", type: "uint8" },
+        { name: "b", type: "int8" },
+        { name: "c", type: "uint16" },
+        { name: "d", type: "int16", defaultValue: -4 },
+        { name: "e", type: "uint32" },
+        { name: "f", type: "int32", defaultValue: 2076 },
+        { name: "g", type: "uint64", defaultValue: 17n },
+        { name: "h", type: "int64", defaultValue: -17n },
+        { name: "i", type: "float32" },
+        { name: "j", type: "float64", defaultValue: 2.518518518518518 },
+        { name: "k", type: "bool", defaultValue: true },
+        { name: "l", type: "string", defaultValue: "test" },
+        { name: "m", type: "string", upperBound: 16 },
+        { name: "n", type: "uint8", isArray: true, arrayLength: 4 },
+        { name: "o", type: "uint16", isArray: true },
+        { name: "p", type: "uint8", isArray: true, arrayUpperBound: 4 },
+        { name: "q", type: "string", isArray: true, arrayLength: 2 },
+        { name: "r", type: "messages::GlobalStruct", isComplex: true },
+        { name: "s", type: "messages::LocalStruct", isComplex: true },
+        { name: "u", type: "int32" },
+      ],
+    })
+  })
+})
+
+describe("deserializeMessage", () => {
+  it("reads a self-describing .cb buffer", () => {
+    let offset = 0
+    const result = Cbuf.deserializeMessage(new Map(), serialized, offset)
+    offset += result.size
+
+    assert.equal(result.typeName, "cbufmsg::metadata")
+    assert.equal(result.size, 419)
+    assert.equal(result.hashValue, 13719997278438781638n)
+    assert(Math.abs(result.timestamp - 1677005408.4643354) < 0.000001)
+    assert.equal(result.message.msg_hash, 16888428354405413574n)
+    assert.equal(result.message.msg_name, "messages::strings")
+
+    const result2 = Cbuf.parseCBufSchema(result.message.msg_meta)
+    assert.equal(result2.error, undefined)
+    const schema = result2.schema
+
+    assert.equal(schema.size, 3)
+    assert.notEqual(schema.get("messages::strings"), undefined)
+    assert.notEqual(schema.get("messages::logmsg"), undefined)
+    assert.notEqual(schema.get("messages::set_loglevel"), undefined)
+
+    const hashMap = Cbuf.schemaMapToHashMap(schema)
+
+    const result3 = Cbuf.deserializeMessage(hashMap, serialized, offset)
+    assert.equal(result3.typeName, "messages::strings")
+    assert.equal(result3.size, 104)
+    assert.equal(result3.message.key, "launcher_config_path")
+
+    offset += result3.size
+    const result4 = Cbuf.deserializeMessage(hashMap, serialized, offset)
+
+    console.dir(result4, { depth: 10 })
   })
 })

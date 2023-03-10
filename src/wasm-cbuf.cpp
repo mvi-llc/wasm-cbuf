@@ -5,6 +5,7 @@
 #include <string>
 
 #include "SchemaParser.h"
+#include "SymbolTable.h"
 #include "ast.h"
 
 using emscripten::val;
@@ -18,7 +19,7 @@ val MakeError(const std::string& error) {
   return obj;
 }
 
-void parseNamespace(const ast_namespace* ns, val& array) {
+void ParseNamespace(const ast_namespace* ns, const SymbolTable* symtable, val& array) {
   std::string nsName = ns->name != nullptr ? std::string{ns->name} : "";
   if (nsName == GLOBAL_NAMESPACE) {
     nsName = "";
@@ -41,7 +42,11 @@ void parseNamespace(const ast_namespace* ns, val& array) {
     for (const ast_element* elem : st->elements) {
       val def = val::object();
       def.set("name", elem->name != nullptr ? elem->name : "");
-      def.set("type", SchemaParser::TypeName(elem));
+      def.set("type", SchemaParser::TypeName(elem, symtable));
+
+      if (SchemaParser::IsComplex(elem, symtable)) {
+        def.set("isComplex", true);
+      }
 
       // Default value handling
       if (elem->init_value) {
@@ -102,8 +107,13 @@ void parseNamespace(const ast_namespace* ns, val& array) {
   }
 }
 
-val parseCBufSchema(val schema) {
-  std::string schemaStr = schema.as<std::string>();
+/**
+ * Parses `.cbuf` schema text data where all #include statements have been replaced by the contents
+ * of the included files, and returns a JSON object containing the parsed schema on success or an
+ * error string on failure.
+ */
+val parseCBufSchema(val schemaText) {
+  std::string schemaStr = schemaText.as<std::string>();
   // Ensure schemaStr ends with a newline. The parser will fail otherwise
   if (schemaStr.back() != '\n') {
     schemaStr += '\n';
@@ -121,7 +131,12 @@ val parseCBufSchema(val schema) {
     return MakeError(error.empty() ? "No AST after schema parsing" : error);
   }
 
-  if (!parser.computeHashes(ast)) {
+  SymbolTable symtable;
+  if (!symtable.initialize(ast)) {
+    return MakeError("Could not initialize symbol table");
+  }
+
+  if (!parser.computeHashes(ast, &symtable)) {
     const auto& error = parser.lastError();
     return MakeError(error.empty() ? "Failed to compute hashes" : error);
   }
@@ -129,9 +144,9 @@ val parseCBufSchema(val schema) {
   val array = val::array();
 
   // Iterate each namespace
-  parseNamespace(&ast->global_space, array);
+  ParseNamespace(&ast->global_space, &symtable, array);
   for (const ast_namespace* ns : ast->spaces) {
-    parseNamespace(ns, array);
+    ParseNamespace(ns, &symtable, array);
   }
 
   val ret = val::object();

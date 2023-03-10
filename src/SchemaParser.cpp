@@ -78,16 +78,11 @@ const std::string& SchemaParser::lastError() const {
   return this->errors;
 }
 
-bool SchemaParser::computeHashes(ast_global* ast) {
+bool SchemaParser::computeHashes(ast_global* ast, SymbolTable* symtable) {
   Interp interp;
-  SymbolTable symtable;
-  if (!symtable.initialize(ast)) {
-    WriteError("Could not initialize symbol table");
-    return false;
-  }
 
   for (auto* st : ast->global_space.structs) {
-    if (!ComputeHash(st, &symtable, &interp)) {
+    if (!ComputeHash(st, symtable, &interp)) {
       WriteError("Could not compute hash for %s. %s", st->name, interp.getErrorString());
       return false;
     }
@@ -95,7 +90,7 @@ bool SchemaParser::computeHashes(ast_global* ast) {
 
   for (auto* ns : ast->spaces) {
     for (auto* st : ns->structs) {
-      if (!ComputeHash(st, &symtable, &interp)) {
+      if (!ComputeHash(st, symtable, &interp)) {
         WriteError("Could not compute hash for %s::%s. %s", ns->name, st->name,
                    interp.getErrorString());
         return false;
@@ -106,7 +101,7 @@ bool SchemaParser::computeHashes(ast_global* ast) {
   return true;
 }
 
-std::string SchemaParser::TypeName(const ast_element* elem) {
+std::string SchemaParser::TypeName(const ast_element* elem, const SymbolTable* symtable) {
   switch (elem->type) {
     case TYPE_U8:
       return "uint8";
@@ -134,6 +129,12 @@ std::string SchemaParser::TypeName(const ast_element* elem) {
     case TYPE_BOOL:
       return "bool";
     case TYPE_CUSTOM: {
+      // Check if this is an enum
+      if (symtable->find_enum(elem)) {
+        return "int32";
+      }
+
+      // Create the full name of the type. `namespace::type` or `type` for globals
       if (elem->namespace_name) {
         return std::string{elem->namespace_name} + "::" + elem->custom_name;
       } else if (elem->enclosing_struct && elem->enclosing_struct->space->name) {
@@ -142,4 +143,11 @@ std::string SchemaParser::TypeName(const ast_element* elem) {
       return elem->custom_name;
     }
   }
+}
+
+bool SchemaParser::IsComplex(const ast_element* elem, const SymbolTable* symtable) {
+  if (elem->type == TYPE_CUSTOM) {
+    return !symtable->find_enum(elem);
+  }
+  return false;
 }
