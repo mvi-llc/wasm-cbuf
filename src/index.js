@@ -73,7 +73,7 @@ function schemaMapToHashMap(schemaMap) {
  * @param {Map<string, import("@foxglove/message-definition").MessageDefinition>} hashMap A
  *   map of hash values to message definitions obtained from `parseCBufSchema()` then
  *   `schemaMapToHashMap()`.
- * @param {Uint8Array} data The byte buffer to deserialize from.
+ * @param {ArrayBufferView} data The byte buffer to deserialize from.
  * @param {number | undefined} offset Optional byte offset into the buffer to deserialize from.
  * @returns {{
  *   typeName: string; // The fully qualified message name
@@ -173,45 +173,45 @@ function deserializeNakedMessage(hashMap, msgdef, view, offset, output) {
       switch (field.type) {
         case "bool":
         case "uint8":
-          output[field.name] = new Uint8Array(view.buffer, bufferOffset, arrayLength)
+          output[field.name] = typedArray(Uint8Array, view.buffer, bufferOffset, arrayLength)
           innerOffset += arrayLength
           break
         case "int8":
-          output[field.name] = new Int8Array(view.buffer, bufferOffset, arrayLength)
+          output[field.name] = typedArray(Int8Array, view.buffer, bufferOffset, arrayLength)
           innerOffset += arrayLength
           break
         case "uint16":
-          output[field.name] = new Uint16Array(view.buffer, bufferOffset, arrayLength)
+          output[field.name] = typedArray(Uint16Array, view.buffer, bufferOffset, arrayLength)
           innerOffset += arrayLength * 2
           break
         case "int16":
-          output[field.name] = new Int16Array(view.buffer, bufferOffset, arrayLength)
+          output[field.name] = typedArray(Int16Array, view.buffer, bufferOffset, arrayLength)
           innerOffset += arrayLength * 2
           break
         case "uint32":
-          output[field.name] = new Uint32Array(view.buffer, bufferOffset, arrayLength)
+          output[field.name] = typedArray(Uint32Array, view.buffer, bufferOffset, arrayLength)
           innerOffset += arrayLength * 4
           break
         case "int32":
-          output[field.name] = new Int32Array(view.buffer, bufferOffset, arrayLength)
+          output[field.name] = typedArray(Int32Array, view.buffer, bufferOffset, arrayLength)
           innerOffset += arrayLength * 4
           break
         case "uint64":
           // eslint-disable-next-line no-undef
-          output[field.name] = new BigUint64Array(view.buffer, bufferOffset, arrayLength)
+          output[field.name] = typedArray(BigUint64Array, view.buffer, bufferOffset, arrayLength)
           innerOffset += arrayLength * 8
           break
         case "int64":
           // eslint-disable-next-line no-undef
-          output[field.name] = new BigInt64Array(view.buffer, bufferOffset, arrayLength)
+          output[field.name] = typedArray(BigInt64Array, view.buffer, bufferOffset, arrayLength)
           innerOffset += arrayLength * 8
           break
         case "float32":
-          output[field.name] = new Float32Array(view.buffer, bufferOffset, arrayLength)
+          output[field.name] = typedArray(Float32Array, view.buffer, bufferOffset, arrayLength)
           innerOffset += arrayLength * 4
           break
         case "float64":
-          output[field.name] = new Float64Array(view.buffer, bufferOffset, arrayLength)
+          output[field.name] = typedArray(Float64Array, view.buffer, bufferOffset, arrayLength)
           innerOffset += arrayLength * 8
           break
         default: {
@@ -236,6 +236,30 @@ function deserializeNakedMessage(hashMap, msgdef, view, offset, output) {
   return innerOffset
 }
 
+function typedArray(TypedArrayConstructor, buffer, offset, length) {
+  // new TypedArrayConstructor(...) will throw if you try to make a typed array on unaligned boundary
+  // but for aligned access we can use a typed array and avoid any extra memory alloc/copy
+  if (offset % TypedArrayConstructor.BYTES_PER_ELEMENT === 0) {
+    return new TypedArrayConstructor(buffer, offset, length)
+  }
+
+  // Copy the data to align it
+  // Using _set_ is slightly faster than slice on the array buffer according to benchmarks when written
+  const size = TypedArrayConstructor.BYTES_PER_ELEMENT * length
+  const copy = new Uint8Array(size)
+  copy.set(new Uint8Array(buffer, offset, size))
+  return new TypedArrayConstructor(copy.buffer, copy.byteOffset, length)
+}
+
+/**
+ *
+ * @param {Map<string, import("@foxglove/message-definition").MessageDefinition>} hashMap
+ * @param {import("@foxglove/message-definition").MessageDefinitionField} field
+ * @param {DataView} view
+ * @param {number} offset
+ * @param {Record<string, unknown>} output
+ * @returns {number}
+ */
 function readNonArrayField(hashMap, field, view, offset, output) {
   let innerOffset = 0
 
@@ -261,8 +285,8 @@ function readNonArrayField(hashMap, field, view, offset, output) {
       output[field.name] = nestedMessage
     } else {
       // Nested non-naked struct. This has a cbuf message header followed by the message data
-      const nestedMessage = deserializeMessage(hashMap, view.buffer, offset + innerOffset)
-      output[field.name] = nestedMessage
+      const nestedMessage = deserializeMessage(hashMap, view, offset + innerOffset)
+      output[field.name] = nestedMessage.message
       innerOffset += nestedMessage.size
     }
   } else {
@@ -278,53 +302,59 @@ function readNonArrayField(hashMap, field, view, offset, output) {
  * @param {DataView} view DataView to read from
  * @param {number} offset Byte offset in the DataView to read from
  * @param {Record<string, unknown>} message Output message object to write a new field to
- * @param {import("@foxglove/message-definition").MessageDefinition} msgdef Message definition for
- *   the field
+ * @param {import("@foxglove/message-definition").MessageDefinitionField} field Message definition
+ *   for the field
  * @returns {number} The number of bytes consumed from the buffer
  */
-function readBasicType(view, offset, message, msgdef) {
-  switch (msgdef.type) {
+function readBasicType(view, offset, message, field) {
+  switch (field.type) {
     case "bool":
-      message[msgdef.name] = view.getUint8(offset) !== 0
+      message[field.name] = view.getUint8(offset) !== 0
       return 1
     case "int8":
-      message[msgdef.name] = view.getInt8(offset)
+      message[field.name] = view.getInt8(offset)
       return 1
     case "uint8":
-      message[msgdef.name] = view.getUint8(offset)
+      message[field.name] = view.getUint8(offset)
       return 1
     case "int16":
-      message[msgdef.name] = view.getInt16(offset, true)
+      message[field.name] = view.getInt16(offset, true)
       return 2
     case "uint16":
-      message[msgdef.name] = view.getUint16(offset, true)
+      message[field.name] = view.getUint16(offset, true)
       return 2
     case "int32":
-      message[msgdef.name] = view.getInt32(offset, true)
+      message[field.name] = view.getInt32(offset, true)
       return 4
     case "uint32":
-      message[msgdef.name] = view.getUint32(offset, true)
+      message[field.name] = view.getUint32(offset, true)
       return 4
     case "int64":
-      message[msgdef.name] = view.getBigInt64(offset, true)
+      message[field.name] = view.getBigInt64(offset, true)
       return 8
     case "uint64":
-      message[msgdef.name] = view.getBigUint64(offset, true)
+      message[field.name] = view.getBigUint64(offset, true)
       return 8
     case "float32":
-      message[msgdef.name] = view.getFloat32(offset, true)
+      message[field.name] = view.getFloat32(offset, true)
       return 4
     case "float64":
-      message[msgdef.name] = view.getFloat64(offset, true)
+      message[field.name] = view.getFloat64(offset, true)
       return 8
     case "string": {
-      const length = view.getUint32(offset, true)
-      const bytes = new Uint8Array(view.buffer, view.byteOffset + offset + 4, length)
-      message[msgdef.name] = textDecoder.decode(bytes)
-      return 4 + length
+      let curOffset = 0
+      let length = field.upperBound
+      if (length == undefined) {
+        length = view.getUint32(offset, true)
+        curOffset += 4
+      }
+      const bytes = new Uint8Array(view.buffer, view.byteOffset + offset + curOffset, length)
+      const str = textDecoder.decode(bytes)
+      message[field.name] = str.split("\0").shift()
+      return curOffset + length
     }
     default:
-      throw new Error(`Unsupported type ${msgdef.type}`)
+      throw new Error(`Unsupported type ${field.type}`)
   }
 }
 
