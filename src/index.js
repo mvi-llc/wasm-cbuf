@@ -1,4 +1,5 @@
 const ModuleFactory = require("./wasm-cbuf")
+
 const ModulePromise = ModuleFactory()
 
 let Module
@@ -83,9 +84,9 @@ function schemaMapToHashMap(schemaMap) {
  * }} A JavaScript object representing the deserialized message header fields and message data.
  */
 function deserializeMessage(hashMap, data, offset) {
-  offset = offset || 0
-  if (offset < 0 || offset >= data.length) {
-    throw new Error(`Invalid offset ${offset} for buffer of length ${data.length}`)
+  let curOffset = offset || 0
+  if (curOffset < 0 || curOffset >= data.length) {
+    throw new Error(`Invalid offset ${curOffset} for buffer of length ${data.length}`)
   }
 
   // CBuf layout for a non-naked struct:
@@ -96,33 +97,33 @@ function deserializeMessage(hashMap, data, offset) {
   //   message data
 
   // Create a view into the buffer starting at offset and reset offset to zero
-  const view = new DataView(data.buffer, data.byteOffset + offset, data.byteLength - offset)
-  offset = 0
+  const view = new DataView(data.buffer, data.byteOffset + curOffset, data.byteLength - curOffset)
+  curOffset = 0
   if (view.byteLength < 24) {
     throw new Error(`Buffer too small to contain cbuf header: ${view.byteLength} bytes`)
   }
 
   // CBUF_MAGIC
-  const magic = view.getUint32(offset, true)
-  offset += 4
+  const magic = view.getUint32(curOffset, true)
+  curOffset += 4
   if (magic !== 0x56444e54) {
     throw new Error(`Invalid cbuf magic 0x${magic.toString(16)}`)
   }
 
   // size
-  const size = view.getUint32(offset, true)
-  offset += 4
+  const size = view.getUint32(curOffset, true)
+  curOffset += 4
   if (size > view.byteLength) {
     throw new Error(`cbuf size ${size} exceeds buffer of length ${view.byteLength}`)
   }
 
   // hashValue
-  const hashValue = view.getBigUint64(offset, true)
-  offset += 8
+  const hashValue = view.getBigUint64(curOffset, true)
+  curOffset += 8
 
   // timestamp
-  const timestamp = view.getFloat64(offset, true)
-  offset += 8
+  const timestamp = view.getFloat64(curOffset, true)
+  curOffset += 8
 
   // Look up the message definition by hash value in the schema hash map with a fallback check for
   // the built-in metadata definition
@@ -136,9 +137,9 @@ function deserializeMessage(hashMap, data, offset) {
 
   // message data
   const message = {}
-  offset += deserializeNakedMessage(hashMap, msgdef, view, offset, message)
-  if (offset !== size) {
-    throw new Error(`cbuf size ${size} does not match decoded size ${offset}`)
+  curOffset += deserializeNakedMessage(hashMap, msgdef, view, curOffset, message)
+  if (curOffset !== size) {
+    throw new Error(`cbuf size ${size} does not match decoded size ${curOffset}`)
   }
 
   return { typeName: msgdef.name, size, hashValue, timestamp, message }
@@ -160,7 +161,7 @@ function deserializeNakedMessage(hashMap, msgdef, view, offset, output) {
     if (field.isArray === true) {
       // Array field (fixed or variable length)
       let arrayLength = field.arrayLength
-      if (arrayLength === undefined) {
+      if (arrayLength == undefined) {
         arrayLength = view.getUint32(offset + innerOffset, true)
         innerOffset += 4
       }
@@ -196,10 +197,12 @@ function deserializeNakedMessage(hashMap, msgdef, view, offset, output) {
           innerOffset += arrayLength * 4
           break
         case "uint64":
+          // eslint-disable-next-line no-undef
           output[field.name] = new BigUint64Array(view.buffer, bufferOffset, arrayLength)
           innerOffset += arrayLength * 8
           break
         case "int64":
+          // eslint-disable-next-line no-undef
           output[field.name] = new BigInt64Array(view.buffer, bufferOffset, arrayLength)
           innerOffset += arrayLength * 8
           break
@@ -316,8 +319,7 @@ function readBasicType(view, offset, message, msgdef) {
       return 8
     case "string": {
       const length = view.getUint32(offset, true)
-      offset += 4
-      const bytes = new Uint8Array(view.buffer, view.byteOffset + offset, length)
+      const bytes = new Uint8Array(view.buffer, view.byteOffset + offset + 4, length)
       message[msgdef.name] = textDecoder.decode(bytes)
       return 4 + length
     }
@@ -344,6 +346,7 @@ ModulePromise.then((mod) => {
 
   // export the Module object for testing purposes _only_
   if (typeof process === "object" && process.env.NODE_ENV === "test") {
+    // eslint-disable-next-line no-underscore-dangle
     module.exports.__module = Module
   }
 })
