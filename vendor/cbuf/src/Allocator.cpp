@@ -28,7 +28,7 @@ void* PoolAllocator::allocateFromBlock(block* b, size_t size) {
 
 PoolAllocator::PoolAllocator(size_t start_size) {
   if (start_size == 0) {
-    block_size = 64 * MEGABYTES;
+    block_size = 1 * MEGABYTES;
   } else {
     // Align to the megabyte
     start_size = (start_size >> 10) << 10;
