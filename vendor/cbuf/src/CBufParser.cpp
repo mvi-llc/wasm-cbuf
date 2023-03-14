@@ -1118,18 +1118,6 @@ bool CBufParser::ParseMetadata(const std::string& metadata, const std::string& s
     return false;
   }
 
-  if (!loop_all_structs(ast, sym, &interp, compute_simple) || interp.has_error()) {
-    WriteError("Parsing error: %s",
-               interp.has_error() ? interp.getErrorString() : "compute_simple failed");
-    return false;
-  }
-
-  if (!loop_all_structs(ast, sym, &interp, compute_compact) || interp.has_error()) {
-    WriteError("Parsing error: %s",
-               interp.has_error() ? interp.getErrorString() : "compute_compact failed");
-    return false;
-  }
-
   if (!loop_all_structs(ast, sym, &interp, compute_sizes) || interp.has_error()) {
     WriteError("Parsing error: %s",
                interp.has_error() ? interp.getErrorString() : "compute_sizes failed");

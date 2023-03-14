@@ -34,8 +34,6 @@ void ParseNamespace(const ast_namespace* ns, const SymbolTable* symtable, val& a
     entry.set("line", st->loc.line);
     entry.set("column", st->loc.col);
     entry.set("naked", st->naked);
-    entry.set("simple", st->simple);
-    entry.set("hasCompact", st->has_compact);
 
     // Extract field definitions for this struct
     val definitions = val::array();

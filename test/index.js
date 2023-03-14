@@ -36,8 +36,6 @@ namespace cbufmsg
       line: 6,
       column: 5,
       naked: false,
-      simple: false,
-      hasCompact: false,
       definitions: [
         { name: "msg_hash", type: "uint64" },
         { name: "msg_name", type: "string" },
@@ -49,7 +47,7 @@ namespace cbufmsg
   it("parses all cbuf schema features", async () => {
     await Cbuf.isLoaded
 
-    const result = Cbuf.parseCBufSchema(`
+    const schema = `
 // This is a single line comment
 
 /*
@@ -98,8 +96,10 @@ namespace messages {
     LocalEnum u;
   }
 }
-`)
+`
 
+    const result = Cbuf.parseCBufSchema(schema)
+    assert.equal(result.error, undefined)
     assert.equal(result.schema.size, 3)
 
     const globalStruct = result.schema.get("GlobalStruct")
@@ -112,8 +112,6 @@ namespace messages {
       line: 13,
       column: 21,
       naked: false,
-      simple: true,
-      hasCompact: false,
       definitions: [{ name: "x", type: "uint32" }],
     })
 
@@ -123,8 +121,6 @@ namespace messages {
       line: 23,
       column: 22,
       naked: true,
-      simple: true,
-      hasCompact: false,
       definitions: [{ name: "x", type: "uint32" }],
     })
 
@@ -134,8 +130,6 @@ namespace messages {
       line: 27,
       column: 15,
       naked: false,
-      simple: false,
-      hasCompact: true,
       definitions: [
         { name: "a", type: "uint8" },
         { name: "b", type: "int8" },
@@ -159,6 +153,12 @@ namespace messages {
         { name: "u", type: "int32" },
       ],
     })
+
+    // FIXME: This check is failing due to some leftover state or memory
+    // corruption in the wasm module
+    // Make sure we can parse the schema repeatedly
+    // const result2 = Cbuf.parseCBufSchema(schema)
+    // assert.equal(result2.error, undefined)
   })
 })
 

@@ -10,17 +10,6 @@ declare module "wasm-cbuf" {
     column: number
     /** If true, this struct is not prefixed with a cbuf message header */
     naked: boolean
-    /**
-     * If true, the layout of this struct on disk and in memory are the same. It has no strings or
-     * variable length arrays.
-     */
-    simple: boolean
-    /**
-     * True if this struct or any nested struct contains a compact array. A compact array is
-     * fixed-length at runtime but is serialized to disk as a length-prefixed dynamic array. This is
-     * represented as a `MessageDefinitionField` with the `arrayUpperBound` property set.
-     */
-    hasCompact: boolean
   }
 
   export type CbufTypedArray =
@@ -94,7 +83,11 @@ declare module "wasm-cbuf" {
      * @returns A JavaScript object representing the deserialized message header fields and message
      *   data.
      */
-    deserializeMessage: (hashMap: CbufHashMap, data: Uint8Array, offset?: number) => CbufMessage
+    deserializeMessage: (
+      hashMap: CbufHashMap,
+      data: ArrayBufferView,
+      offset?: number,
+    ) => CbufMessage
   }
 
   const cbuf: Cbuf

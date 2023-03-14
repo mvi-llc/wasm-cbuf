@@ -29,8 +29,6 @@ async function main() {
           line: 1,
           column: 13,
           naked: false,
-          simple: true,
-          hasCompact: false,
           definitions: [
             { name: 'x', type: 'float32' },
             { name: 'y', type: 'float32' }
