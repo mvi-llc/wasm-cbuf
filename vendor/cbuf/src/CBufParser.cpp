@@ -1108,6 +1108,9 @@ bool CBufParser::ParseMetadata(const std::string& metadata, const std::string& s
     return false;
   }
 
+  if (sym) {
+    delete sym;
+  }
   sym = new SymbolTable;
   bool bret = sym->initialize(ast);
   if (!bret) {
