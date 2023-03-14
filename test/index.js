@@ -164,6 +164,9 @@ namespace messages {
 
 describe("deserializeMessage", () => {
   it("reads a self-describing .cb buffer", () => {
+    // Cbuf.deserializeMessage does not use the wasm module, so no need to
+    // await Cbuf.isLoaded
+
     let offset = 0
     const result = Cbuf.deserializeMessage(new Map(), serialized, offset)
     offset += result.size
@@ -194,6 +197,8 @@ describe("deserializeMessage", () => {
     offset += result3.size
     const result4 = Cbuf.deserializeMessage(hashMap, serialized, offset)
 
-    console.dir(result4, { depth: 10 })
+    assert.equal(result4.typeName, "messages::strings")
+    assert.equal(result4.size, 1357)
+    assert.equal(result4.message.key, "launcher_config_json")
   })
 })

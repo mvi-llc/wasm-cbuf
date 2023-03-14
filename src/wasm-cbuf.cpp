@@ -154,6 +154,7 @@ val parseCBufSchema(val schemaText) {
   return ret;
 }
 
+// Exported JavaScript API
 EMSCRIPTEN_BINDINGS(cbuf) {
   emscripten::function("parseCBufSchema", &parseCBufSchema);
 }
