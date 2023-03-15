@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 
+set -e
+
 mkdir -p dist
 
 emcc \
   /cbuf/build/libcbuf_parse.a -o dist/wasm-cbuf.js src/SchemaParser.cpp src/wasm-cbuf.cpp \
   -O3 `# compile with all optimizations enabled` \
   -msimd128 `# enable SIMD support` \
-  -flto `# enable link time optimization` \
   --bind `# enable emscripten function binding` \
   -I /cbuf/include `# add the cbuf include directory` \
   -I /cbuf/src `# add the cbuf src as an include directory as well for access to ast.h` \

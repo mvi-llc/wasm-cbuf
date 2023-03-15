@@ -1,18 +1,10 @@
 #include "Parser.h"
 
-#include <sys/stat.h>
-#include <sys/types.h>
-
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-static bool file_exists(const char* file) {
-  struct stat buffer;
-  return (stat(file, &buffer) == 0);
-}
 
 #define CASE_ELEM_TYPE(e) \
   case TYPE_##e:          \
@@ -403,8 +395,9 @@ ast_element* Parser::parseElementDeclaration() {
           allow_special_case = true;
         }
         if (!allow_special_case) {
-          Error("Could not assign an initialization of type %s to member %s of type %s\n",
-                ElementTypeToStr(val->elemtype), elem->name, ElementTypeToStr(elem->type));
+          Error("Could not assign an initialization of type %s (%d) to member %s of type %s (%d)\n",
+                ValueTypeToStr(val->valtype), val->elemtype, elem->name,
+                ElementTypeToStr(elem->type), elem->type);
           return nullptr;
         }
       }
@@ -958,49 +951,6 @@ ast_namespace* Parser::parseNamespace() {
   return sp;
 }
 
-void Parser::parseImport() {
-  Token t;
-  lex->getNextToken(t);
-
-  if (t.type != TK_IMPORT) {
-    Error("Keyword 'import' expected, found: %s\n", TokenTypeToStr(t.type));
-    return;
-  }
-
-  lex->getNextToken(t);
-  if (t.type != TK_STRING) {
-    Error("After a #import there has to be a filename, in quotes, found: %s\n",
-          TokenTypeToStr(t.type));
-    return;
-  }
-
-  for (auto& alread_imported : top_level_ast->imported_files) {
-    if (!strcmp(alread_imported, t.string)) {
-      // This is like doing a #pragma once
-      return;
-    }
-  }
-
-  // Declare a local parser and parse the input file as needed
-  Parser local_parser;
-  local_parser.args = this->args;
-  local_parser.interp = this->interp;
-
-  // try to find the file we have to import, t.string;
-  for (auto folder : args->incs) {
-    char impfile[128] = {};
-    sprintf(impfile, "%s/%s", folder, t.string);
-    if (file_exists(impfile)) {
-      local_parser.Parse(impfile, pool, top_level_ast);
-      success = local_parser.success;
-      top_level_ast->imported_files.push_back(t.string);
-      return;
-    }
-  }
-  interp->ErrorWithLoc(t.loc, lex->getFileData(), "Could not find import file: %s\n", t.string);
-  success = false;
-}
-
 ast_global* Parser::ParseBuffer(const char* buffer, u64 buf_size, Allocator* pool,
                                 ast_global* top) {
   Lexer local_lex;
@@ -1011,21 +961,6 @@ ast_global* Parser::ParseBuffer(const char* buffer, u64 buf_size, Allocator* poo
 
   if (!lex->loadString(buffer, buf_size)) {
     interp->Error("Error: String Buffer could not be opened to be processed\n");
-    return nullptr;
-  }
-
-  return ParseInternal(top);
-}
-
-ast_global* Parser::Parse(const char* filename, Allocator* pool, ast_global* top) {
-  Lexer local_lex;
-  this->lex = &local_lex;
-  this->pool = pool;
-
-  lex->setPoolAllocator(pool);
-
-  if (!lex->openFile(filename)) {
-    interp->Error("Error: File [%s] could not be opened to be processed\n", filename);
     return nullptr;
   }
 
@@ -1050,10 +985,8 @@ ast_global* Parser::ParseInternal(ast_global* top) {
     Token t;
     lex->lookaheadToken(t);
     if (t.type == TK_IMPORT) {
-      parseImport();
-      if (!success) {
-        return nullptr;
-      }
+      Error("#import statements are not supported\n");
+      return nullptr;
     } else if (t.type == TK_NAMESPACE) {
       (void)parseNamespace();
       if (!success) {

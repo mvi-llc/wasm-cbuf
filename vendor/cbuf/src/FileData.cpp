@@ -1,17 +1,17 @@
 #include "FileData.h"
 
 #ifdef WIN32
-#include <windows.h>
+#  include <windows.h>
 #else
-#define strncpy_s strncpy
-#include <string.h>
+#  define strncpy_s strncpy
+#  include <string.h>
 #endif
 
 #include <stdio.h>
 #include <stdlib.h>
 
 #if defined(getc)
-#undef getc
+#  undef getc
 #endif
 
 FileData::FileData() {
@@ -22,42 +22,8 @@ FileData::FileData() {
   ncol = 1;
 }
 
-FileData::~FileData() { close(); }
-
-bool FileData::open(const char* filename) {
+FileData::~FileData() {
   close();
-#ifdef WIN32
-  HANDLE hFile = CreateFileA(filename, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-
-  if (hFile == INVALID_HANDLE_VALUE) return false;
-
-  DWORD lo, hi;
-  lo = hi = 0;
-  lo = GetFileSize(hFile, &hi);
-  size = lo | ((size_t)hi << 32);
-  data = (char*)malloc(size);
-
-  BOOL b = ReadFile(hFile, data, (DWORD)size, &lo, NULL);
-  CloseHandle(hFile);
-#else
-  FILE* hFile = fopen(filename, "r");
-  if (!hFile) return false;
-
-  fseek(hFile, 0, SEEK_END);
-  size = ftell(hFile);
-  data = (char*)malloc(size);
-  fseek(hFile, 0, SEEK_SET);
-
-  bool b = (size == fread(data, 1, size, hFile));
-  fclose(hFile);
-#endif
-  if (!b) {
-    close();
-    return false;
-  }
-  lines.push_back(data);
-  strncpy_s(this->filename, filename, sizeof(this->filename));
-  return true;
 }
 
 bool FileData::loadString(const char* str, u64 num_chars) {

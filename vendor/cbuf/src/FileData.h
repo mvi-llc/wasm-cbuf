@@ -5,7 +5,7 @@
 #include "mytypes.h"
 
 #if defined(getc)
-#undef getc
+#  undef getc
 #endif
 
 class FileData {
@@ -20,13 +20,14 @@ class FileData {
 public:
   FileData();
   ~FileData();
-  bool open(const char* filename);
   bool loadString(const char* str, u64 num_chars);
   void close();
   bool getchar(char& c);
   bool peek(char& c);
   void getLocation(SrcLocation& loc) const;
   void lookAheadTwo(char* in);
-  const char* getFilename() const { return filename; }
+  const char* getFilename() const {
+    return filename;
+  }
   char* printLocation(const SrcLocation& loc, char* str) const;
 };

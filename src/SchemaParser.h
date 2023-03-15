@@ -5,6 +5,7 @@
 
 class SchemaParser : public CBufParser {
 public:
+  SymbolTable* symbolTable() const;
   ast_global* parsedAst() const;
   const std::string& lastError() const;
   bool computeHashes(ast_global* ast, SymbolTable* symtable);

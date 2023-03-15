@@ -11,7 +11,7 @@ RUN mkdir -p /cbuf/build && \
   cd /cbuf/build && \
   emcmake cmake \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_FLAGS_RELEASE="-O3 -msimd128 -flto" \
+  -DCMAKE_C_FLAGS_RELEASE="-O3 -msimd128" \
   .. && \
   emmake make
 
