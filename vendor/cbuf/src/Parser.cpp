@@ -176,9 +176,8 @@ static bool isValTypeOperable(ValueType vt) {
 
 // Checks if something of type 2 can be assigned to type 1
 // loosely
-static bool checkTypes(ElementType t1, ElementType t2) {
+static bool checkTypes(ElementType t1, ValueType vt2) {
   auto vt1 = ElemTypeToValType(t1);
-  auto vt2 = ElemTypeToValType(t2);
 
   if (vt1 == VALTYPE_INVALID || vt2 == VALTYPE_INVALID) {
     return false;
@@ -385,7 +384,7 @@ ast_element* Parser::parseElementDeclaration() {
       }
 
       // Check that the value and the type agree
-      if (!checkTypes(elem->type, val->elemtype)) {
+      if (!checkTypes(elem->type, val->valtype)) {
         // Do special support for legacy cases
         bool allow_special_case = false;
         if ((elem->type == TYPE_BOOL) && (val->valtype == VALTYPE_INTEGER)) {
