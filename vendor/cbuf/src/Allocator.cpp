@@ -5,7 +5,9 @@
 
 #define MEGABYTES (1024 * 1024)
 
-void* operator new(size_t size, Allocator* p) { return p->alloc(size); }
+void* operator new(size_t size, Allocator* p) {
+  return p->alloc(size);
+}
 
 void PoolAllocator::allocateBlock(block* b) {
   b->start_address = (u8*)malloc(block_size);
@@ -51,7 +53,9 @@ PoolAllocator::~PoolAllocator() {
   }
 }
 
-void PoolAllocator::free(void* p) { (void)p; }
+void PoolAllocator::free(void* p) {
+  (void)p;
+}
 
 void* PoolAllocator::alloc(size_t size) {
   if (size > block_size) {
@@ -82,10 +86,16 @@ bool PoolAllocator::isAddressInRange(void* p) {
   return false;
 }
 
-void* MallocAllocator::alloc(size_t size) { return malloc(size); }
+void* MallocAllocator::alloc(size_t size) {
+  return malloc(size);
+}
 
-void MallocAllocator::free(void* p) { ::free(p); }
+void MallocAllocator::free(void* p) {
+  ::free(p);
+}
 
 static MallocAllocator mAlloc;
 
-MallocAllocator* getMallocAllocator() { return &mAlloc; }
+MallocAllocator* getMallocAllocator() {
+  return &mAlloc;
+}

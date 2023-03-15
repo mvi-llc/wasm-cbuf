@@ -21,7 +21,6 @@ class Parser {
   bool MustMatchToken(TOKEN_TYPE type, const char* msg);
   ast_element* parseElementDeclaration();
   ast_namespace* find_existing_namespace(const TextType name);
-  void parseImport();
   ast_global* ParseInternal(ast_global* top);
   ast_expression* parseLiteral();
   ast_expression* parseUnaryExpression();
@@ -37,7 +36,6 @@ public:
   Args* args = nullptr;
   bool success;
 
-  ast_global* Parse(const char* filename, Allocator* pool, ast_global* top = nullptr);
   ast_global* ParseBuffer(const char* buffer, u64 buf_size, Allocator* pool, ast_global* top);
 
   ast_enum* parseEnum();

@@ -129,12 +129,9 @@ val parseCBufSchema(val schemaText) {
     return MakeError(error.empty() ? "No AST after schema parsing" : error);
   }
 
-  SymbolTable symtable;
-  if (!symtable.initialize(ast)) {
-    return MakeError("Could not initialize symbol table");
-  }
+  SymbolTable* symtable = parser.symbolTable();
 
-  if (!parser.computeHashes(ast, &symtable)) {
+  if (!parser.computeHashes(ast, symtable)) {
     const auto& error = parser.lastError();
     return MakeError(error.empty() ? "Failed to compute hashes" : error);
   }
@@ -142,9 +139,9 @@ val parseCBufSchema(val schemaText) {
   val array = val::array();
 
   // Iterate each namespace
-  ParseNamespace(&ast->global_space, &symtable, array);
+  ParseNamespace(&ast->global_space, symtable, array);
   for (const ast_namespace* ns : ast->spaces) {
-    ParseNamespace(ns, &symtable, array);
+    ParseNamespace(ns, symtable, array);
   }
 
   val ret = val::object();

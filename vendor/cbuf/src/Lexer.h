@@ -23,8 +23,9 @@ class Lexer {
 public:
   Lexer();
   ~Lexer();
-  void setPoolAllocator(Allocator* p) { pool = p; }
-  bool openFile(const char* filename);
+  void setPoolAllocator(Allocator* p) {
+    pool = p;
+  }
   bool loadString(const char* str, u64 size);
   void parseFile();
   void getCurrentToken(Token& tok);
@@ -33,12 +34,22 @@ public:
   void lookaheadToken(Token& tok);
   void lookNaheadToken(Token& tok, unsigned int ahead);
   void consumeToken();
-  bool checkToken(TOKEN_TYPE t) const { return tokens[token_index].type == t; }
-  bool checkAheadToken(TOKEN_TYPE t, u32 ahead) const { return t == tokens[token_index + ahead].type; }
-  TOKEN_TYPE getTokenType() const { return tokens[token_index].type; }
+  bool checkToken(TOKEN_TYPE t) const {
+    return tokens[token_index].type == t;
+  }
+  bool checkAheadToken(TOKEN_TYPE t, u32 ahead) const {
+    return t == tokens[token_index + ahead].type;
+  }
+  TOKEN_TYPE getTokenType() const {
+    return tokens[token_index].type;
+  }
   void getLocation(SrcLocation& loc) const;
   unsigned int getTokenStreamPosition() const;
   void setTokenStreamPosition(unsigned int index);
-  TextType getFilename() { return filename; }
-  FileData* getFileData() { return file; }
+  TextType getFilename() {
+    return filename;
+  }
+  FileData* getFileData() {
+    return file;
+  }
 };

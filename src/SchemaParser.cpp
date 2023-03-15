@@ -70,6 +70,10 @@ bool ComputeHash(ast_struct* st, SymbolTable* symtable, Interp* interp) {
   return true;
 }
 
+SymbolTable* SchemaParser::symbolTable() const {
+  return this->sym;
+}
+
 ast_global* SchemaParser::parsedAst() const {
   return this->ast;
 }

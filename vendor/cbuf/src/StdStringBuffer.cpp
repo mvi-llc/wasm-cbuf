@@ -10,7 +10,9 @@ StdStringBuffer::StdStringBuffer() {
   ident = 0;
 }
 
-StdStringBuffer::~StdStringBuffer() { buffer.clear(); }
+StdStringBuffer::~StdStringBuffer() {
+  buffer.clear();
+}
 
 void StdStringBuffer::print(const char* fmt, ...) {
   va_list args;
@@ -61,8 +63,14 @@ void StdStringBuffer::print_no(const char* fmt, ...) {
   free(intermediate);
 }
 
-const char* StdStringBuffer::get_buffer() { return buffer.c_str(); }
+const char* StdStringBuffer::get_buffer() {
+  return buffer.c_str();
+}
 
-void StdStringBuffer::reset() { buffer.clear(); }
+void StdStringBuffer::reset() {
+  buffer.clear();
+}
 
-void StdStringBuffer::prepend(const StdStringBuffer* buf) { buffer = buf->buffer + buffer; }
+void StdStringBuffer::prepend(const StdStringBuffer* buf) {
+  buffer = buf->buffer + buffer;
+}

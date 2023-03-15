@@ -157,8 +157,36 @@ namespace messages {
     // FIXME: This check is failing due to some leftover state or memory
     // corruption in the wasm module
     // Make sure we can parse the schema repeatedly
-    // const result2 = Cbuf.parseCBufSchema(schema)
-    // assert.equal(result2.error, undefined)
+    const result2 = Cbuf.parseCBufSchema(schema)
+    assert.equal(result2.error, undefined)
+  })
+
+  it("repeatedly parses a cbuf", async () => {
+    await Cbuf.isLoaded
+
+    const schema = `
+namespace messages {
+  const float X = 1.0;
+
+  struct test {
+    s32 f = 3*4*(12*23) + 70/2;
+    s32 g = 1;
+    s32 h = -1;
+    s32 i;
+    f32 j = 2.0 * 3.4 / 2.7;
+    s32 k;
+    s32 m;
+    s32 n;
+    s32 o[1];
+  }
+}
+`
+
+    for (let i = 0; i < 1000; i++) {
+      const result = Cbuf.parseCBufSchema(schema)
+      assert.equal(result.error, undefined)
+      assert.equal(result.schema.size, 1)
+    }
   })
 })
 

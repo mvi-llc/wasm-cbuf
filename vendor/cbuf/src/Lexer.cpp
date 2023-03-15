@@ -344,14 +344,6 @@ Lexer::Lexer() {
 
 Lexer::~Lexer() {}
 
-bool Lexer::openFile(const char* filename) {
-  if (!file) {
-    file = new (pool) FileData();
-  }
-
-  return file->open(filename);
-}
-
 bool Lexer::loadString(const char* str, u64 size) {
   if (!file) {
     file = new (pool) FileData();
