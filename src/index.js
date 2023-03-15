@@ -293,15 +293,7 @@ function readNonArrayField(schemaMap, hashMap, field, view, offset, output) {
     }
 
     if (nestedMsgdef.naked === true) {
-      // Nested naked struct (no header). Look up the definition by hash value
-      const nestedMsgdef = hashMap.get(nestedMsgdef.hashValue)
-      if (!nestedMsgdef) {
-        throw new Error(
-          `Nested message type ${field.type} (${field.hashValue}) not found in hash map`,
-        )
-      }
-
-      // Deserialize the nested message
+      // Nested naked struct (no header). Just deserialize the nested message
       const nestedMessage = {}
       innerOffset += deserializeNakedMessage(
         schemaMap,

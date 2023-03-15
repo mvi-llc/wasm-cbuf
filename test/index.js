@@ -229,4 +229,47 @@ describe("deserializeMessage", () => {
     assert.equal(result4.size, 1357)
     assert.equal(result4.message.key, "launcher_config_json")
   })
+
+  it("reads a message with a nested naked struct", () => {
+    const structFoo = {
+      name: "messages::foo",
+      naked: true,
+      hashValue: 0n,
+      definitions: [{ name: "x", type: "uint8" }],
+    }
+    const structBar = {
+      name: "messages::bar",
+      naked: false,
+      hashValue: 1n,
+      definitions: [{ name: "foo", type: "messages::foo", isComplex: true }],
+    }
+
+    const schemaMap = new Map()
+    schemaMap.set("messages::foo", structFoo)
+    schemaMap.set("messages::bar", structBar)
+
+    const hashMap = Cbuf.schemaMapToHashMap(schemaMap)
+
+    const data = new Uint8Array(25)
+    // CBUF_MAGIC
+    data[0] = 0x54
+    data[1] = 0x4e
+    data[2] = 0x44
+    data[3] = 0x56
+    // size uint32_t (4 bytes)
+    data[4] = 25
+    data[5] = 0x00
+    data[6] = 0x00
+    data[7] = 0x00
+    // hashValue uint64_t (8 bytes)
+    data[8] = 0x01
+    // timestamp double (8 bytes)
+    // message data
+    data[24] = 42
+
+    const result = Cbuf.deserializeMessage(schemaMap, hashMap, data)
+    assert.equal(result.typeName, "messages::bar")
+    assert.equal(result.size, 25)
+    assert.equal(result.message.foo.x, 42)
+  })
 })
