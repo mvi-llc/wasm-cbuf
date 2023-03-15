@@ -148,7 +148,7 @@ namespace messages {
         { name: "o", type: "uint16", isArray: true },
         { name: "p", type: "uint8", isArray: true, arrayUpperBound: 4 },
         { name: "q", type: "string", isArray: true, arrayLength: 2 },
-        { name: "r", type: "messages::GlobalStruct", isComplex: true },
+        { name: "r", type: "GlobalStruct", isComplex: true },
         { name: "s", type: "messages::LocalStruct", isComplex: true },
         { name: "u", type: "int32" },
       ],

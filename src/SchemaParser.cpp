@@ -138,11 +138,15 @@ std::string SchemaParser::TypeName(const ast_element* elem, const SymbolTable* s
         return "int32";
       }
 
+      ast_struct* custom = symtable->find_struct(elem);
+      if (!custom) {
+        // This shouldn't happen
+        return elem->custom_name;
+      }
+
       // Create the full name of the type. `namespace::type` or `type` for globals
-      if (elem->namespace_name) {
-        return std::string{elem->namespace_name} + "::" + elem->custom_name;
-      } else if (elem->enclosing_struct && elem->enclosing_struct->space->name) {
-        return std::string{elem->enclosing_struct->space->name} + "::" + elem->custom_name;
+      if (custom->space && std::string{GLOBAL_NAMESPACE} != custom->space->name) {
+        return std::string{custom->space->name} + "::" + elem->custom_name;
       }
       return elem->custom_name;
     }
