@@ -196,7 +196,7 @@ describe("deserializeMessage", () => {
     // await Cbuf.isLoaded
 
     let offset = 0
-    const result = Cbuf.deserializeMessage(new Map(), serialized, offset)
+    const result = Cbuf.deserializeMessage(new Map(), new Map(), serialized, offset)
     offset += result.size
 
     assert.equal(result.typeName, "cbufmsg::metadata")
@@ -208,22 +208,22 @@ describe("deserializeMessage", () => {
 
     const result2 = Cbuf.parseCBufSchema(result.message.msg_meta)
     assert.equal(result2.error, undefined)
-    const schema = result2.schema
+    const schemaMap = result2.schema
 
-    assert.equal(schema.size, 3)
-    assert.notEqual(schema.get("messages::strings"), undefined)
-    assert.notEqual(schema.get("messages::logmsg"), undefined)
-    assert.notEqual(schema.get("messages::set_loglevel"), undefined)
+    assert.equal(schemaMap.size, 3)
+    assert.notEqual(schemaMap.get("messages::strings"), undefined)
+    assert.notEqual(schemaMap.get("messages::logmsg"), undefined)
+    assert.notEqual(schemaMap.get("messages::set_loglevel"), undefined)
 
-    const hashMap = Cbuf.schemaMapToHashMap(schema)
+    const hashMap = Cbuf.schemaMapToHashMap(schemaMap)
 
-    const result3 = Cbuf.deserializeMessage(hashMap, serialized, offset)
+    const result3 = Cbuf.deserializeMessage(schemaMap, hashMap, serialized, offset)
     assert.equal(result3.typeName, "messages::strings")
     assert.equal(result3.size, 104)
     assert.equal(result3.message.key, "launcher_config_path")
 
     offset += result3.size
-    const result4 = Cbuf.deserializeMessage(hashMap, serialized, offset)
+    const result4 = Cbuf.deserializeMessage(schemaMap, hashMap, serialized, offset)
 
     assert.equal(result4.typeName, "messages::strings")
     assert.equal(result4.size, 1357)

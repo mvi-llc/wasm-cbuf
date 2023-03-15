@@ -72,9 +72,9 @@ declare module "wasm-cbuf" {
      */
     schemaMapToHashMap: (schemaMap: CbufMessageMap) => CbufHashMap
     /**
-     * Given a schema hash map (`Map<bigint, MessageDefinition>`), a byte buffer, and optional offset
-     * into the buffer, deserialize the buffer into a JavaScript object representing a single non-naked
-     * struct message, which includes a message header and message data.
+     * Given a schema map and hash map, a byte buffer, and optional offset into the buffer,
+     * deserialize the buffer into a JavaScript object representing a single non-naked struct
+     * message, which includes a message header and message data.
      *
      * @param hashMap A map of hash values to message definitions obtained from `parseCBufSchema()`
      *   then `schemaMapToHashMap()`.
@@ -84,6 +84,7 @@ declare module "wasm-cbuf" {
      *   data.
      */
     deserializeMessage: (
+      schemaMap: CbufMessageMap,
       hashMap: CbufHashMap,
       data: ArrayBufferView,
       offset?: number,

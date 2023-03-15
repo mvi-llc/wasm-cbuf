@@ -25,13 +25,19 @@ function ensureLoaded() {
 }
 
 /**
+ * @typedef {import('@foxglove/message-definition').MessageDefinition} MessageDefinition
+ * @typedef {import("@foxglove/message-definition").MessageDefinitionField} MessageDefinitionField
+ * @typedef {MessageDefinition & { hashValue: bigint; line: number; column: number; naked: boolean }} CbufMessageDefinition
+ */
+
+/**
  * Parse a CBuf `.cbuf` schema into an object containing an error string or a
- * `Map<string, MessageDefinition>`.
+ * `Map<string, CbufMessageDefinition>`.
  *
  * @param {string} schemaText The schema text to parse. This is the contents of a `.cbuf` file where
  *   all #include statements have been expanded.
- * @returns { { error?: string; schema: Map<string, import("@foxglove/message-definition").MessageDefinition> } }
- *   An object containing the parsed schema as a Map<string, MessageDefinition> mapping fully
+ * @returns {{ error?: string; schema: Map<string, CbufMessageDefinition> }}
+ *   An object containing the parsed schema as a Map<string, CbufMessageDefinition> mapping fully
  *   qualified message names to their parsed definition, or an error string if parsing failed.
  */
 function parseCBufSchema(schemaText) {
@@ -49,13 +55,12 @@ function parseCBufSchema(schemaText) {
 }
 
 /**
- * Takes a parsed schema (`Map<string, MessageDefinition>`) which maps message names to message
- * definitions and returns a new `Map<bigint, MessageDefinition>` mapping hash values to message
+ * Takes a parsed schema (`Map<string, CbufMessageDefinition>`) which maps message names to message
+ * definitions and returns a new `Map<bigint, CbufMessageDefinition>` mapping hash values to message
  * definitions.
  *
- * @param {Map<string, import("@foxglove/message-definition").MessageDefinition>} schemaMap
- * @returns {Map<bigint, import("@foxglove/message-definition").MessageDefinition>} Mapping from
- *   hash values to message definitions.
+ * @param {Map<string, CbufMessageDefinition>} schemaMap
+ * @returns {Map<bigint, CbufMessageDefinition>} Mapping from hash values to message definitions.
  */
 function schemaMapToHashMap(schemaMap) {
   const hashMap = new Map()
@@ -66,13 +71,14 @@ function schemaMapToHashMap(schemaMap) {
 }
 
 /**
- * Given a schema hash map (`Map<bigint, MessageDefinition>`), a byte buffer, and optional offset
- * into the buffer, deserialize the buffer into a JavaScript object representing a single non-naked
- * struct message, which includes a message header and message data.
+ * Given a schema hash map (`Map<bigint, CbufMessageDefinition>`), a byte buffer, and optional
+ * offset into the buffer, deserialize the buffer into a JavaScript object representing a single
+ * non-naked struct message, which includes a message header and message data.
  *
- * @param {Map<string, import("@foxglove/message-definition").MessageDefinition>} hashMap A
- *   map of hash values to message definitions obtained from `parseCBufSchema()` then
- *   `schemaMapToHashMap()`.
+ * @param {Map<string, CbufMessageDefinition>} schemaMap A map of fully qualified message names to
+ *   message definitions obtained from `parseCBufSchema()`.
+ * @param {Map<bigint, CbufMessageDefinition>} hashMap A map of hash values to message definitions
+ *   obtained from `schemaMapToHashMap()`.
  * @param {ArrayBufferView} data The byte buffer to deserialize from.
  * @param {number | undefined} offset Optional byte offset into the buffer to deserialize from.
  * @returns {{
@@ -83,7 +89,7 @@ function schemaMapToHashMap(schemaMap) {
  *   message: Record<string, unknown> // The deserialized messge data
  * }} A JavaScript object representing the deserialized message header fields and message data.
  */
-function deserializeMessage(hashMap, data, offset) {
+function deserializeMessage(schemaMap, hashMap, data, offset) {
   let curOffset = offset || 0
   if (curOffset < 0 || curOffset >= data.length) {
     throw new Error(`Invalid offset ${curOffset} for buffer of length ${data.length}`)
@@ -137,7 +143,7 @@ function deserializeMessage(hashMap, data, offset) {
 
   // message data
   const message = {}
-  curOffset += deserializeNakedMessage(hashMap, msgdef, view, curOffset, message)
+  curOffset += deserializeNakedMessage(schemaMap, hashMap, msgdef, view, curOffset, message)
   if (curOffset !== size) {
     throw new Error(`cbuf size ${size} does not match decoded size ${curOffset}`)
   }
@@ -147,14 +153,15 @@ function deserializeMessage(hashMap, data, offset) {
 
 /**
  * Deserialize a single naked struct message from a DataView into a JavaScript object.
- * @param {Map<string, import("@foxglove/message-definition").MessageDefinition>} hashMap
- * @param {import("@foxglove/message-definition").MessageDefinition} msgdef
+ * @param {Map<string, CbufMessageDefinition>} schemaMap
+ * @param {Map<bigint, CbufMessageDefinition>} hashMap
+ * @param {CbufMessageDefinition} msgdef
  * @param {DataView} view
  * @param {number} offset
  * @param {Record<string, unknown>} output
  * @returns {number} The number of bytes consumed from the buffer
  */
-function deserializeNakedMessage(hashMap, msgdef, view, offset, output) {
+function deserializeNakedMessage(schemaMap, hashMap, msgdef, view, offset, output) {
   let innerOffset = 0
 
   for (const field of msgdef.definitions) {
@@ -221,7 +228,14 @@ function deserializeNakedMessage(hashMap, msgdef, view, offset, output) {
           const fieldOutput = {}
           for (let i = 0; i < arrayLength; i++) {
             const curOffset = offset + innerOffset
-            innerOffset += readNonArrayField(hashMap, field, view, curOffset, fieldOutput)
+            innerOffset += readNonArrayField(
+              schemaMap,
+              hashMap,
+              field,
+              view,
+              curOffset,
+              fieldOutput,
+            )
             array.push(fieldOutput[field.name])
           }
           output[field.name] = array
@@ -229,7 +243,14 @@ function deserializeNakedMessage(hashMap, msgdef, view, offset, output) {
         }
       }
     } else {
-      innerOffset += readNonArrayField(hashMap, field, view, offset + innerOffset, output)
+      innerOffset += readNonArrayField(
+        schemaMap,
+        hashMap,
+        field,
+        view,
+        offset + innerOffset,
+        output,
+      )
     }
   }
 
@@ -253,20 +274,27 @@ function typedArray(TypedArrayConstructor, buffer, offset, length) {
 
 /**
  *
- * @param {Map<string, import("@foxglove/message-definition").MessageDefinition>} hashMap
- * @param {import("@foxglove/message-definition").MessageDefinitionField} field
+ * @param {Map<string, CbufMessageDefinition>} schemaMap
+ * @param {Map<bigint, CbufMessageDefinition>} hashMap
+ * @param {MessageDefinitionField} field
  * @param {DataView} view
  * @param {number} offset
  * @param {Record<string, unknown>} output
  * @returns {number}
  */
-function readNonArrayField(hashMap, field, view, offset, output) {
+function readNonArrayField(schemaMap, hashMap, field, view, offset, output) {
   let innerOffset = 0
 
   if (field.isComplex === true) {
-    if (field.naked === true) {
+    // Look up the nested message definition
+    const nestedMsgdef = schemaMap.get(field.type)
+    if (!nestedMsgdef) {
+      throw new Error(`Nested message type ${field.type} not found in schema map`)
+    }
+
+    if (nestedMsgdef.naked === true) {
       // Nested naked struct (no header). Look up the definition by hash value
-      const nestedMsgdef = hashMap.get(field.hashValue)
+      const nestedMsgdef = hashMap.get(nestedMsgdef.hashValue)
       if (!nestedMsgdef) {
         throw new Error(
           `Nested message type ${field.type} (${field.hashValue}) not found in hash map`,
@@ -276,6 +304,7 @@ function readNonArrayField(hashMap, field, view, offset, output) {
       // Deserialize the nested message
       const nestedMessage = {}
       innerOffset += deserializeNakedMessage(
+        schemaMap,
         hashMap,
         nestedMsgdef,
         view,
@@ -285,7 +314,7 @@ function readNonArrayField(hashMap, field, view, offset, output) {
       output[field.name] = nestedMessage
     } else {
       // Nested non-naked struct. This has a cbuf message header followed by the message data
-      const nestedMessage = deserializeMessage(hashMap, view, offset + innerOffset)
+      const nestedMessage = deserializeMessage(schemaMap, hashMap, view, offset + innerOffset)
       output[field.name] = nestedMessage.message
       innerOffset += nestedMessage.size
     }
@@ -302,8 +331,7 @@ function readNonArrayField(hashMap, field, view, offset, output) {
  * @param {DataView} view DataView to read from
  * @param {number} offset Byte offset in the DataView to read from
  * @param {Record<string, unknown>} message Output message object to write a new field to
- * @param {import("@foxglove/message-definition").MessageDefinitionField} field Message definition
- *   for the field
+ * @param {MessageDefinitionField} field Message definition for the field
  * @returns {number} The number of bytes consumed from the buffer
  */
 function readBasicType(view, offset, message, field) {
