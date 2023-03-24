@@ -256,11 +256,11 @@ describe("deserializeMessage", () => {
     data[1] = 0x4e
     data[2] = 0x44
     data[3] = 0x56
-    // size uint32_t (4 bytes)
+    // size+variant uint32_t (4 bytes)
     data[4] = 25
     data[5] = 0x00
     data[6] = 0x00
-    data[7] = 0x00
+    data[7] = 0x88
     // hashValue uint64_t (8 bytes)
     data[8] = 0x01
     // timestamp double (8 bytes)
@@ -270,6 +270,7 @@ describe("deserializeMessage", () => {
     const result = Cbuf.deserializeMessage(schemaMap, hashMap, data)
     assert.equal(result.typeName, "messages::bar")
     assert.equal(result.size, 25)
+    assert.equal(result.variant, 1)
     assert.equal(result.message.foo.x, 42)
   })
 })
