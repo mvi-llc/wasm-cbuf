@@ -38,6 +38,8 @@ declare module "wasm-cbuf" {
     typeName: string
     /** The size of the message header and message data, in bytes */
     size: number
+    /** The message variant, for distinguishing multiple publishers of the same message type */
+    variant: number
     /** The hash value of the `.cbuf` message definition */
     hashValue: bigint
     /** A timestamp in seconds since the Unix epoch as a 64-bit float */

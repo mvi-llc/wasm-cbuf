@@ -84,6 +84,7 @@ function schemaMapToHashMap(schemaMap) {
  * @returns {{
  *   typeName: string; // The fully qualified message name
  *   size: number; // The size of the message header and message data, in bytes
+ *   variant: number; // The message variant
  *   hashValue: bigint; // The hash value of the `.cbuf` message definition
  *   timestamp: number; // A timestamp in seconds since the Unix epoch as a 64-bit float
  *   message: Record<string, unknown> // The deserialized messge data
@@ -116,8 +117,11 @@ function deserializeMessage(schemaMap, hashMap, data, offset) {
     throw new Error(`Invalid cbuf magic 0x${magic.toString(16)}`)
   }
 
-  // size
-  const size = view.getUint32(curOffset, true)
+  // size and variant
+  const sizeAndVariant = view.getUint32(curOffset, true)
+  const hasVariant = (sizeAndVariant & 0x80000000) >>> 0 == 0x80000000
+  const size = hasVariant ? sizeAndVariant & 0x07ffffff : sizeAndVariant & 0x7fffffff
+  const variant = hasVariant ? (sizeAndVariant >> 27) & 0x0f : 0
   curOffset += 4
   if (size > view.byteLength) {
     throw new Error(`cbuf size ${size} exceeds buffer of length ${view.byteLength}`)
@@ -148,7 +152,7 @@ function deserializeMessage(schemaMap, hashMap, data, offset) {
     throw new Error(`cbuf size ${size} does not match decoded size ${curOffset}`)
   }
 
-  return { typeName: msgdef.name, size, hashValue, timestamp, message }
+  return { typeName: msgdef.name, size, variant, hashValue, timestamp, message }
 }
 
 /**
