@@ -48,35 +48,40 @@ void ParseNamespace(const ast_namespace* ns, const SymbolTable* symtable, val& a
 
       // Default value handling
       if (elem->init_value) {
-        switch (elem->type) {
-          case TYPE_U8:
-          case TYPE_U16:
-          case TYPE_U32:
-            def.set("defaultValue", uint32_t(elem->init_value->int_val));
-            break;
-          case TYPE_S8:
-          case TYPE_S16:
-          case TYPE_S32:
-            def.set("defaultValue", int32_t(elem->init_value->int_val));
-            break;
-          case TYPE_U64:
-          case TYPE_S64:
-            def.set("defaultValue", elem->init_value->int_val);
-            break;
-          case TYPE_F32:
-          case TYPE_F64:
-            def.set("defaultValue", elem->init_value->float_val);
-            break;
-          case TYPE_STRING:
-          case TYPE_SHORT_STRING:
-            def.set("defaultValue", std::string{elem->init_value->str_val});
-            break;
-          case TYPE_BOOL:
-            def.set("defaultValue", elem->init_value->bool_val);
-            break;
-          case TYPE_CUSTOM:
-            // Custom type default values are not supported
-            break;
+        if (elem->init_value->exptype == EXPTYPE_ARRAY_LITERAL) {
+          // TODO: Handle array literals
+          def.set("defaultValue", val::array());
+        } else {
+          switch (elem->type) {
+            case TYPE_U8:
+            case TYPE_U16:
+            case TYPE_U32:
+              def.set("defaultValue", uint32_t(elem->init_value->int_val));
+              break;
+            case TYPE_S8:
+            case TYPE_S16:
+            case TYPE_S32:
+              def.set("defaultValue", int32_t(elem->init_value->int_val));
+              break;
+            case TYPE_U64:
+            case TYPE_S64:
+              def.set("defaultValue", elem->init_value->int_val);
+              break;
+            case TYPE_F32:
+            case TYPE_F64:
+              def.set("defaultValue", elem->init_value->float_val);
+              break;
+            case TYPE_STRING:
+            case TYPE_SHORT_STRING:
+              def.set("defaultValue", std::string{elem->init_value->str_val});
+              break;
+            case TYPE_BOOL:
+              def.set("defaultValue", elem->init_value->bool_val);
+              break;
+            case TYPE_CUSTOM:
+              // Custom type default values are not supported
+              break;
+          }
         }
       }
 

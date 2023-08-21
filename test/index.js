@@ -87,7 +87,7 @@ namespace messages {
     bool k = true;
     string l = "test";
     short_string m;
-    u8 n[4];
+    u8 n[4] = {10 + 20, 30 - (50 * (12 / 6)), 97, 98};
     uint16_t o[];
     uint8_t p[4] @compact;
     string q[2];
@@ -144,7 +144,7 @@ namespace messages {
         { name: "k", type: "bool", defaultValue: true },
         { name: "l", type: "string", defaultValue: "test" },
         { name: "m", type: "string", upperBound: 16 },
-        { name: "n", type: "uint8", isArray: true, arrayLength: 4 },
+        { name: "n", type: "uint8", isArray: true, arrayLength: 4, defaultValue: [] },
         { name: "o", type: "uint16", isArray: true },
         { name: "p", type: "uint8", isArray: true, arrayUpperBound: 4 },
         { name: "q", type: "string", isArray: true, arrayLength: 2 },
