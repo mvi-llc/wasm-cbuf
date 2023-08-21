@@ -6,6 +6,9 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "TokenType.h"
+#include "ast.h"
+
 #define CASE_ELEM_TYPE(e) \
   case TYPE_##e:          \
     return #e
@@ -43,6 +46,7 @@ static const char* ValueTypeToStr(ValueType vt) {
     CASE_VAL_TYPE(STRING);
     CASE_VAL_TYPE(IDENTIFIER);
     CASE_VAL_TYPE(BOOL);
+    CASE_VAL_TYPE(ARRAY);
   }
 #ifdef __llvm__
   __builtin_debugtrap();
@@ -176,18 +180,28 @@ static bool isValTypeOperable(ValueType vt) {
 
 // Checks if something of type 2 can be assigned to type 1
 // loosely
-static bool checkTypes(ElementType t1, ValueType vt2) {
+static bool checkTypes(ElementType t1, const ast_value* val) {
   auto vt1 = ElemTypeToValType(t1);
 
-  if (vt1 == VALTYPE_INVALID || vt2 == VALTYPE_INVALID) {
+  if (vt1 == VALTYPE_INVALID || val->valtype == VALTYPE_INVALID) {
     return false;
   }
 
-  if (vt1 == VALTYPE_FLOAT && vt2 == VALTYPE_INTEGER) {
+  if (vt1 == VALTYPE_FLOAT && val->valtype == VALTYPE_INTEGER) {
     // Allow for implicit integer promotion to float
     return true;
   }
-  return vt1 == vt2;
+
+  if (val->valtype == VALTYPE_ARRAY) {
+    // check all it's elements which could be arrays themselves in the future
+    bool success = true;
+    auto arr_val = static_cast<const ast_array_value*>(val);
+    for (auto& elem : arr_val->values) {
+      success &= checkTypes(t1, elem);
+    }
+    return success;
+  }
+  return vt1 == val->valtype;
 }
 
 void Parser::ErrorWithLoc(SrcLocation& loc, const char* msg, ...) {
@@ -224,12 +238,45 @@ bool Parser::MustMatchToken(TOKEN_TYPE type, const char* msg) {
   return true;
 }
 
+/*
+ * Parses an array initializer. This is a comma separated list of expressions
+ * enclosed in braces. No type checking is done here.
+ */
+ast_array_expression* Parser::parseArrayExpression() {
+  if (!lex->checkToken(TK_OPEN_BRACKET)) {
+    Error("Expected an array initializer starting with a \'{\'\n");
+    return nullptr;
+  }
+  lex->consumeToken();
+  ast_array_expression* arr = new (pool) ast_array_expression();
+  while (true) {
+    ast_expression* expr = parseExpression();
+    if (!success) {
+      return nullptr;
+    }
+    arr->expressions.push_back(expr);
+    if (!lex->checkToken(TK_COMMA) && !lex->checkToken(TK_CLOSE_BRACKET)) {
+      Error("Expected a comma or a closing bracket");
+      return nullptr;
+    }
+    if (lex->checkToken(TK_COMMA)) {
+      lex->consumeToken();
+    } else if (lex->checkToken(TK_CLOSE_BRACKET)) {
+      break;
+    }
+  }
+  // Consume the closing bracket
+  lex->consumeToken();
+  success = true;
+  return arr;
+}
+
 ast_element* Parser::parseElementDeclaration() {
   Token t;
   lex->getNextToken(t);
 
   if (!isBuiltInType(t.type) && (t.type != TK_IDENTIFIER)) {
-    Error("To define an element of a struct please use a built in type or defined struct\n");
+    Error("To define an element of a struct please use a built in type or defined struct");
     return nullptr;
   }
   ast_element* elem = new (pool) ast_element();
@@ -241,7 +288,7 @@ ast_element* Parser::parseElementDeclaration() {
       lex->consumeToken();
       lex->getNextToken(t);
       if (t.type != TK_IDENTIFIER) {
-        Error("Please put a name after the namespace\n");
+        Error("Please put a name after the namespace");
         return nullptr;
       }
       elem->namespace_name = elem->custom_name;
@@ -330,7 +377,6 @@ ast_element* Parser::parseElementDeclaration() {
           }
         }
       }
-
       if (lex->checkToken(TK_CLOSE_SQBRACKET)) {
         lex->consumeToken();
         if (last_array == nullptr) {
@@ -349,6 +395,7 @@ ast_element* Parser::parseElementDeclaration() {
         return nullptr;
       }
 
+      // After parsing <type> <name>[<size>] we check for the compact array
       if (lex->checkToken(TK_COMPACT_ARRAY)) {
         lex->consumeToken();
         if (ar->size == 0) {
@@ -365,9 +412,10 @@ ast_element* Parser::parseElementDeclaration() {
       lex->consumeToken();
       lex->lookaheadToken(t);
 
-      ast_value* val = new (pool) ast_value;
+      ast_value* val = nullptr;
 
       if (t.type == TOKEN_TYPE::TK_IDENTIFIER) {
+        val = new (pool) ast_value();
         val->exptype = EXPTYPE_LITERAL;
         val->valtype = VALTYPE_IDENTIFIER;
         val->type = TYPE_STRING;
@@ -378,13 +426,13 @@ ast_element* Parser::parseElementDeclaration() {
         if (!success) return nullptr;
 
         // We have an expression initialization, first compute its value if we can
-        if (!computeExpressionValue(expr, val)) {
+        if (!(val = computeExpressionValue(expr))) {
           return nullptr;
         }
       }
-
       // Check that the value and the type agree
-      if (!checkTypes(elem->type, val->valtype)) {
+      if (!checkTypes(elem->type, val)) {
+        // TODO(kartikarcot): should we allow special cases for array values?
         // Do special support for legacy cases
         bool allow_special_case = false;
         if ((elem->type == TYPE_BOOL) && (val->valtype == VALTYPE_INTEGER)) {
@@ -394,9 +442,26 @@ ast_element* Parser::parseElementDeclaration() {
           allow_special_case = true;
         }
         if (!allow_special_case) {
-          Error("Could not assign an initialization of type %s (%d) to member %s of type %s (%d)\n",
-                ValueTypeToStr(val->valtype), val->elemtype, elem->name,
-                ElementTypeToStr(elem->type), elem->type);
+          // TODO(kartikarcot): How to make this error more informative for array values
+          Error("Could not assign an initialization of type %s to member %s of type %s\n",
+                ValueTypeToStr(val->valtype), elem->name, ElementTypeToStr(elem->type));
+          return nullptr;
+        }
+      }
+      if (elem->array_suffix || val->valtype == VALTYPE_ARRAY) {
+        // check if either the element is an array or the value is an array then both should be
+        // arrays
+        if (!(elem->array_suffix && val->valtype == VALTYPE_ARRAY)) {
+          Error("Could not assign an initialization of type %s to member %s of type %s\n",
+                ValueTypeToStr(val->valtype), elem->name, ElementTypeToStr(elem->type));
+          return nullptr;
+        }
+        auto arr_val = static_cast<ast_array_value*>(val);
+        // TODO(kartikarcot): Enable Multidimensional arrays when needed
+        // check that the array sizes match
+        if (elem->array_suffix->size != 0 && arr_val->values.size() != elem->array_suffix->size) {
+          Error("Could not assign an initialization of size %d to member %s of size %d\n",
+                arr_val->values.size(), elem->name, elem->array_suffix->size);
           return nullptr;
         }
       }
@@ -410,108 +475,123 @@ ast_element* Parser::parseElementDeclaration() {
   return elem;
 }
 
-bool Parser::computeExpressionValue(ast_expression* expr, ast_value* val) {
+ast_value* Parser::computeExpressionValue(ast_expression* expr) {
   if (expr->exptype == EXPTYPE_LITERAL) {
-    *val = *static_cast<ast_value*>(expr);
-    return true;
+    return static_cast<ast_value*>(expr);
+  } else if (expr->exptype == EXPTYPE_ARRAY_LITERAL) {
+    auto val = new (pool) ast_array_value;
+    // compute the ast_array_value from the ast_array_expression
+    ast_array_expression* arr_expr = static_cast<ast_array_expression*>(expr);
+    val->valtype = VALTYPE_ARRAY;
+    val->exptype = EXPTYPE_ARRAY_LITERAL;
+    for (auto& e : arr_expr->expressions) {
+      ast_value* v = nullptr;
+      if (!(v = computeExpressionValue(e))) {
+        return nullptr;
+      }
+      val->values.push_back(v);
+    }
+    return val;
   } else if (expr->exptype == EXPTYPE_UNARY) {
     ast_unaryexp* un = static_cast<ast_unaryexp*>(expr);
-    if (!computeExpressionValue(un->expr, val)) {
-      return false;
+    ast_value* val = nullptr;
+    if (!(val = computeExpressionValue(un->expr))) {
+      return nullptr;
     }
-
     if (!isValTypeOperable(val->valtype)) {
       Error("Unable to apply unary operand %s to %s\n", TokenTypeToStr(un->op),
             ValueTypeToStr(val->valtype));
-      return false;
+      return nullptr;
     }
     if (un->op == TK_PLUS) {
-      return true;
+      return val;
     } else if (un->op == TK_MINUS) {
       if (val->valtype == VALTYPE_FLOAT) {
         val->float_val = -val->float_val;
       } else {
         val->int_val = -val->int_val;
       }
-      return true;
+      return val;
     }
   } else if (expr->exptype == EXPTYPE_BINARY) {
     ast_binaryexp* bin = static_cast<ast_binaryexp*>(expr);
-    ast_value lval, rval;
-    if (!computeExpressionValue(bin->lhs, &lval) || !computeExpressionValue(bin->rhs, &rval)) {
-      return false;
+    ast_value* lval = nullptr;
+    ast_value* rval = nullptr;
+    if (!(lval = computeExpressionValue(bin->lhs)) || !(rval = computeExpressionValue(bin->rhs))) {
+      return nullptr;
     }
 
-    if (!isValTypeOperable(lval.valtype) || !isValTypeOperable(rval.valtype)) {
+    if (!isValTypeOperable(lval->valtype) || !isValTypeOperable(rval->valtype)) {
       Error("Unable to apply binary operand %s to %s , %s\n", TokenTypeToStr(bin->op),
-            ValueTypeToStr(lval.valtype), ValueTypeToStr(rval.valtype));
-      return false;
+            ValueTypeToStr(lval->valtype), ValueTypeToStr(rval->valtype));
+      return nullptr;
     }
 
     ValueType finalvt;
-    if (lval.valtype == VALTYPE_INTEGER && rval.valtype == VALTYPE_INTEGER) {
+    if (lval->valtype == VALTYPE_INTEGER && rval->valtype == VALTYPE_INTEGER) {
       finalvt = VALTYPE_INTEGER;
     } else {
-      assert(lval.valtype == VALTYPE_INTEGER || lval.valtype == VALTYPE_FLOAT ||
-             rval.valtype == VALTYPE_INTEGER || rval.valtype == VALTYPE_FLOAT);
+      assert(lval->valtype == VALTYPE_INTEGER || lval->valtype == VALTYPE_FLOAT ||
+             rval->valtype == VALTYPE_INTEGER || rval->valtype == VALTYPE_FLOAT);
       finalvt = VALTYPE_FLOAT;
     }
+    ast_value* val = new (pool) ast_value;
     val->valtype = finalvt;
     val->is_hex = false;
 
     if (finalvt == VALTYPE_INTEGER) {
       switch (bin->op) {
         case TK_PLUS:
-          val->int_val = getIntVal(&lval) + getIntVal(&rval);
+          val->int_val = getIntVal(lval) + getIntVal(rval);
           break;
         case TK_MINUS:
-          val->int_val = getIntVal(&lval) - getIntVal(&rval);
+          val->int_val = getIntVal(lval) - getIntVal(rval);
           break;
         case TK_DIV:
-          val->int_val = getIntVal(&lval) / getIntVal(&rval);
+          val->int_val = getIntVal(lval) / getIntVal(rval);
           break;
         case TK_STAR:
-          val->int_val = getIntVal(&lval) * getIntVal(&rval);
+          val->int_val = getIntVal(lval) * getIntVal(rval);
           break;
         case TK_MOD:
-          val->int_val = getIntVal(&lval) % getIntVal(&rval);
+          val->int_val = getIntVal(lval) % getIntVal(rval);
           break;
         default:
           Error("Binary operator %s not supported for integers\n", TokenTypeToStr(bin->op));
-          return false;
+          return nullptr;
       }
     } else {
       switch (bin->op) {
         case TK_PLUS:
-          val->float_val = getDoubleVal(&lval) + getDoubleVal(&rval);
+          val->float_val = getDoubleVal(lval) + getDoubleVal(rval);
           break;
         case TK_MINUS:
-          val->float_val = getDoubleVal(&lval) - getDoubleVal(&rval);
+          val->float_val = getDoubleVal(lval) - getDoubleVal(rval);
           break;
         case TK_DIV:
-          val->float_val = getDoubleVal(&lval) / getDoubleVal(&rval);
+          val->float_val = getDoubleVal(lval) / getDoubleVal(rval);
           break;
         case TK_STAR:
-          val->float_val = getDoubleVal(&lval) * getDoubleVal(&rval);
+          val->float_val = getDoubleVal(lval) * getDoubleVal(rval);
           break;
         default:
           Error("Binary operator %s not supported for floating point\n", TokenTypeToStr(bin->op));
-          return false;
+          return nullptr;
       }
     }
-
-    return true;
+    return val;
   } else {
     Error("Unexpected expression type!\n");
-    return false;
+    return nullptr;
   }
-  return false;
+  Error("Unable to compute expression value: %zu", expr);
+  return nullptr;
 }
 
-ast_expression* Parser::parseLiteral() {
+// Parses simple literals like numbers, strings, etc
+ast_expression* Parser::parseSimpleLiteral() {
   Token t;
   lex->getNextToken(t);
-
   if (t.type == TK_IDENTIFIER) {
     Error("Identifiers are not allowed on expressions in cbuf");
     return nullptr;
@@ -561,7 +641,6 @@ ast_expression* Parser::parseLiteral() {
         return nullptr;
       }
     }
-
     return expr;
   } else if (t.type == TK_PERIOD) {
     // We support period for expressions like `.5`
@@ -586,6 +665,21 @@ ast_expression* Parser::parseLiteral() {
   }
   Error("Could not parse a literal expression! Unknown token type: %s", TokenTypeToStr(t.type));
   return nullptr;
+}
+
+ast_expression* Parser::parseLiteral() {
+  Token t;
+  lex->lookaheadToken(t);
+  // first check if it's an array literal then we will recurse in further
+  if (t.type == TK_OPEN_BRACKET) {
+    auto expr = parseArrayExpression();
+    if (expr == nullptr) {
+      printf("Error parsing array expression failed");
+    }
+    return expr;
+  }
+  // if we are here it's not an array literal and so we attempt to parse a simple literal
+  return parseSimpleLiteral();
 }
 
 ast_expression* Parser::parseUnaryExpression() {
@@ -742,26 +836,25 @@ ast_enum* Parser::parseEnum() {
     if (t.type == TK_ASSIGN) {
       lex->consumeToken();
       auto* expr = parseExpression();
-      if (!success) {
-        Error("Failed to parse assignment expression: %s\n", t.string);
+      if (!success) return nullptr;
+
+      ast_value* val = nullptr;
+      if (!(val = computeExpressionValue(expr))) {
         return nullptr;
       }
 
-      ast_value val;
-      if (!computeExpressionValue(expr, &val)) {
-        return nullptr;
-      }
-
-      if (val.valtype != VALTYPE_INTEGER) {
+      if (val->valtype != VALTYPE_INTEGER) {
         Error("Only integers numbers can be used for enums, found %s\n", TokenTypeToStr(t.type));
         return nullptr;
       }
 
       item.item_assigned = true;
-      item.item_value = val.int_val;
+      item.item_value = val->int_val;
       lex->lookaheadToken(t);
     }
-
+    if (!item.item_assigned && en->elements.size() > 0) {
+      item.item_value = en->elements[en->elements.size() - 1].item_value + 1;
+    }
     en->elements.push_back(item);
 
     if (t.type == TK_COMMA) {

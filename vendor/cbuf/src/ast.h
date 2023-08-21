@@ -27,7 +27,7 @@ enum ElementType {
   TYPE_CUSTOM
 };
 
-enum ExpressionType { EXPTYPE_LITERAL = 0, EXPTYPE_UNARY, EXPTYPE_BINARY };
+enum ExpressionType { EXPTYPE_LITERAL = 0, EXPTYPE_UNARY, EXPTYPE_BINARY, EXPTYPE_ARRAY_LITERAL };
 
 enum ValueType {
   VALTYPE_INVALID = 0,
@@ -35,7 +35,8 @@ enum ValueType {
   VALTYPE_FLOAT,
   VALTYPE_STRING,
   VALTYPE_BOOL,
-  VALTYPE_IDENTIFIER
+  VALTYPE_IDENTIFIER,
+  VALTYPE_ARRAY
 };
 
 struct ast_array_definition {
@@ -107,6 +108,14 @@ struct ast_value : ast_expression {
   bool is_hex = false;
 };
 
+struct ast_array_value : ast_value {
+  ast_array_value() {
+    exptype = EXPTYPE_ARRAY_LITERAL;
+    valtype = VALTYPE_ARRAY;
+  }
+  Array<ast_value*> values;
+};
+
 struct ast_unaryexp : ast_expression {
   ast_unaryexp() { exptype = EXPTYPE_UNARY; }
   ast_expression* expr = nullptr;
@@ -118,6 +127,17 @@ struct ast_binaryexp : ast_expression {
   ast_expression* lhs = nullptr;
   ast_expression* rhs = nullptr;
   TOKEN_TYPE op = TK_INVALID;
+};
+
+// An expression to hold an array of values whose type is not known
+// It is possible that this is not a valid expression, which will be checked
+// when it is converted to a value
+struct ast_array_expression : ast_expression {
+  ast_array_expression()
+      : ast_expression() {
+    exptype = EXPTYPE_ARRAY_LITERAL;
+  }
+  Array<ast_expression*> expressions;
 };
 
 struct ast_const {
