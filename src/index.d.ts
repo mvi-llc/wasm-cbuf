@@ -78,8 +78,9 @@ declare module "wasm-cbuf" {
      * deserialize the buffer into a JavaScript object representing a single non-naked struct
      * message, which includes a message header and message data.
      *
-     * @param hashMap A map of hash values to message definitions obtained from `parseCBufSchema()`
-     *   then `schemaMapToHashMap()`.
+     * @param schemaMap A map of fully qualified message names to message definitions obtained from
+     *   `parseCBufSchema()`.
+     * @param hashMap A map of hash values to message definitions obtained `schemaMapToHashMap()`.
      * @param data The byte buffer to deserialize from.
      * @param offset Optional byte offset into the buffer to deserialize from.
      * @returns A JavaScript object representing the deserialized message header fields and message
@@ -91,6 +92,36 @@ declare module "wasm-cbuf" {
       data: ArrayBufferView,
       offset?: number,
     ) => CbufMessage
+    /**
+     * Given a schema map and hash map, and a `CbufMessage` object, serialize the message into a
+     * byte buffer.
+     *
+     * @param schemaMap A map of fully qualified message names to message definitions obtained from
+     *   `parseCBufSchema()`.
+     * @param hashMap A map of hash values to message definitions obtained `schemaMapToHashMap()`.
+     * @param message
+     * @returns A byte buffer containing the serialized message header and message data.
+     */
+    serializeMessage: (
+      schemaMap: CbufMessageMap,
+      hashMap: CbufHashMap,
+      message: CbufMessage,
+    ) => ArrayBuffer
+    /**
+     * Given a schema map and hash map, and a `CbufMessage` object, return the size of the
+     * serialized message in bytes.
+     *
+     * @param schemaMap A map of fully qualified message names to message definitions obtained from
+     *   `parseCBufSchema()`.
+     * @param hashMap A map of hash values to message definitions obtained `schemaMapToHashMap()`.
+     * @param message
+     * @returns The size of the serialized message in bytes.
+     */
+    serializedMessageSize: (
+      schemaMap: CbufMessageMap,
+      hashMap: CbufHashMap,
+      message: CbufMessage,
+    ) => number
   }
 
   const cbuf: Cbuf

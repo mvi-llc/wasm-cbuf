@@ -16,7 +16,10 @@ const METADATA_DEFINITION = {
   ],
 }
 
+const HEADER_SIZE = 4 + 4 + 8 + 8
+
 const textDecoder = new TextDecoder()
+const textEncoder = new TextEncoder()
 
 function ensureLoaded() {
   if (!Module) {
@@ -71,9 +74,9 @@ function schemaMapToHashMap(schemaMap) {
 }
 
 /**
- * Given a schema hash map (`Map<bigint, CbufMessageDefinition>`), a byte buffer, and optional
- * offset into the buffer, deserialize the buffer into a JavaScript object representing a single
- * non-naked struct message, which includes a message header and message data.
+ * Given hash maps from message names and hash values to `CbufMessageDefinition`s, a byte buffer,
+ * and optional offset into the buffer, deserialize the buffer into a JavaScript object representing
+ * a single non-naked struct message, which includes a message header and message data.
  *
  * @param {Map<string, CbufMessageDefinition>} schemaMap A map of fully qualified message names to
  *   message definitions obtained from `parseCBufSchema()`.
@@ -137,10 +140,8 @@ function deserializeMessage(schemaMap, hashMap, data, offset) {
 
   // Look up the message definition by hash value in the schema hash map with a fallback check for
   // the built-in metadata definition
-  let msgdef = hashMap.get(hashValue)
-  if (!msgdef && hashValue === METADATA_DEFINITION.hashValue) {
-    msgdef = METADATA_DEFINITION
-  }
+  const msgdef =
+    hashValue === METADATA_DEFINITION.hashValue ? METADATA_DEFINITION : hashMap.get(hashValue)
   if (!msgdef) {
     throw new Error(`cbuf hash value ${hashValue} not found in the hash map`)
   }
@@ -382,9 +383,355 @@ function readBasicType(view, offset, message, field) {
   }
 }
 
+/**
+ * Given a schema map and hash map, and a `CbufMessage` object, return the size of the serialized
+ * message in bytes, including the CBUF header.
+ *
+ * @param {Map<string, CbufMessageDefinition>} schemaMap
+ * @param {Map<bigint, CbufMessageDefinition>} hashMap
+ * @param {CbufMessage} message
+ * @returns {number} The size of the serialized message in bytes, including the CBUF header
+ */
+function serializedMessageSize(schemaMap, hashMap, message) {
+  if (typeof message.hashValue !== "bigint") {
+    throw new Error(`hashValue must be a bigint`)
+  }
+  if (typeof message.message !== "object") {
+    throw new Error(`message must be an object`)
+  }
+
+  // Find the message definition by hash value
+  const msgdef =
+    message.hashValue === METADATA_DEFINITION.hashValue
+      ? METADATA_DEFINITION
+      : hashMap.get(message.hashValue)
+  if (!msgdef) {
+    throw new Error(`Unknown message hash value ${message.hashValue} (${message.typeName}})`)
+  }
+
+  return HEADER_SIZE + serializedNakedMessageSize(schemaMap, hashMap, msgdef, message.message)
+}
+
+/**
+ * Given a schema map and hash map, and a plain JavaScript object representing the message payload,
+ * return the size of the serialized message in bytes (not including the CBUF header since this is
+ * assumed to be a naked message struct).
+ *
+ * @param {Map<string, CbufMessageDefinition>} schemaMap
+ * @param {Map<bigint, CbufMessageDefinition>} hashMap
+ * @param {CbufMessageDefinition} msgdef
+ * @param {Record<string, unknown>} message
+ * @returns {number} The size of the serialized message in bytes
+ */
+function serializedNakedMessageSize(schemaMap, hashMap, msgdef, message) {
+  let size = 0
+  for (const field of msgdef.definitions) {
+    const value = message[field.name]
+
+    if (field.isArray === true) {
+      // Array field (fixed or variable length)
+      let arrayLength = field.arrayLength
+      if (arrayLength == undefined) {
+        arrayLength = Array.isArray(value) ? value.length : 0
+        size += 4
+      }
+
+      switch (field.type) {
+        case "bool":
+        case "uint8":
+        case "int8":
+          size += arrayLength
+          break
+        case "uint16":
+        case "int16":
+          size += arrayLength * 2
+          break
+        case "uint32":
+        case "int32":
+        case "float32":
+          size += arrayLength * 4
+          break
+        case "uint64":
+        case "int64":
+        case "float64":
+          size += arrayLength * 8
+          break
+        default:
+          // string array or nested struct array. Read each element individually and push onto an
+          // array
+          for (const element of value) {
+            size += serializedNakedMessageSize(schemaMap, hashMap, element)
+          }
+          break
+      }
+    } else {
+      if (field.isComplex === true) {
+        // Look up the nested message definition
+        const nestedMsgdef = schemaMap.get(field.type)
+        if (!nestedMsgdef) {
+          throw new Error(`Nested message type ${field.type} not found in schema map`)
+        }
+
+        if (nestedMsgdef.naked !== true) {
+          size += HEADER_SIZE
+        }
+
+        size += serializedNakedMessageSize(schemaMap, hashMap, nestedMsgdef, value)
+      } else {
+        switch (field.type) {
+          case "bool":
+          case "uint8":
+          case "int8":
+            size += 1
+            break
+          case "uint16":
+          case "int16":
+            size += 2
+            break
+          case "uint32":
+          case "int32":
+          case "float32":
+            size += 4
+            break
+          case "uint64":
+          case "int64":
+          case "float64":
+            size += 8
+            break
+          case "string": {
+            let length = field.upperBound
+            if (length == undefined) {
+              length = typeof value === "string" ? value.length : 0
+              size += 4
+            }
+            size += length
+            break
+          }
+          default:
+            throw new Error(`Unsupported type ${field.type}`)
+        }
+      }
+    }
+  }
+
+  return size
+}
+
+/**
+ * Given a schema map and hash map, and a `CbufMessage` object, serialize the message into a byte
+ * buffer.
+ *
+ * @param {Map<string, CbufMessageDefinition>} schemaMap A map of fully qualified message names to
+ *   message definitions obtained from `parseCBufSchema()`.
+ * @param {Map<bigint, CbufMessageDefinition>} hashMap A map of hash values to message definitions
+ *   obtained from `schemaMapToHashMap()`.
+ * @param {CbufMessage} message The message to serialize.
+ * @returns {ArrayBuffer} A byte buffer containing the serialized message.
+ */
+function serializeMessage(schemaMap, hashMap, message) {
+  let curOffset = 0
+
+  // Find the message definition by hash value
+  const msgdef =
+    message.hashValue === METADATA_DEFINITION.hashValue
+      ? METADATA_DEFINITION
+      : hashMap.get(message.hashValue)
+  if (!msgdef) {
+    throw new Error(`Unknown message hash value ${message.hashValue} (${message.typeName}})`)
+  }
+
+  // Determine the total message size
+  const size = serializedMessageSize(schemaMap, hashMap, message)
+  const buffer = new ArrayBuffer(size)
+  const view = new DataView(buffer)
+
+  // CBuf layout for a non-naked struct:
+  //   CBUF_MAGIC (4 bytes) 0x56444e54
+  //   size uint32_t (4 bytes)
+  //   hashValue uint64_t (8 bytes)
+  //   timestamp double (8 bytes)
+  //   message data
+
+  // CBUF_MAGIC
+  view.setUint32(curOffset, 0x56444e54, true)
+  curOffset += 4
+
+  // size and variant
+  const hasVariant = message.variant != undefined
+  const sizeAndVariant = (hasVariant ? message.variant << 27 : 0) | size
+  view.setUint32(curOffset, sizeAndVariant, true)
+  curOffset += 4
+
+  // hashValue
+  view.setBigUint64(curOffset, message.hashValue, true)
+  curOffset += 8
+
+  // timestamp
+  view.setFloat64(curOffset, message.timestamp, true)
+  curOffset += 8
+
+  // message data
+  curOffset += serializeNakedMessage(schemaMap, hashMap, msgdef, message.message, view, curOffset)
+
+  return buffer
+}
+
+/**
+ * Serialize a single naked struct message into the given DataView at the given offset.
+ *
+ * @param {Map<string, CbufMessageDefinition>} schemaMap
+ * @param {Map<bigint, CbufMessageDefinition>} hashMap
+ * @param {CbufMessageDefinition} msgdef The message definition for the message to serialize
+ * @param {Record<string, unknown>} message The message payload to serialize
+ * @param {DataView} view The DataView to write to
+ * @param {number} offset The byte offset into the DataView to write to
+ * @returns {number} The number of bytes written to the DataView
+ */
+function serializeNakedMessage(schemaMap, hashMap, msgdef, message, view, offset) {
+  let innerOffset = 0
+  for (const field of msgdef.definitions) {
+    const value = message[field.name]
+
+    if (field.isArray === true) {
+      // Array field (fixed or variable length)
+      let arrayLength = field.arrayLength
+      if (arrayLength == undefined) {
+        arrayLength = Array.isArray(value) ? value.length : 0
+        view.setUint32(offset + innerOffset, arrayLength, true)
+        innerOffset += 4
+      }
+
+      for (let i = 0; i < arrayLength; i++) {
+        innerOffset += serializeNonArrayField(
+          schemaMap,
+          hashMap,
+          field,
+          value[i],
+          view,
+          offset + innerOffset,
+        )
+      }
+    } else {
+      innerOffset += serializeNonArrayField(
+        schemaMap,
+        hashMap,
+        field,
+        value,
+        view,
+        offset + innerOffset,
+      )
+    }
+  }
+
+  return innerOffset
+}
+
+/**
+ * Serialize a single non-array field into the given DataView at the given offset.
+ *
+ * @param {Map<string, CbufMessageDefinition>} schemaMap
+ * @param {Map<bigint, CbufMessageDefinition>} hashMap
+ * @param {MessageDefinitionField} field
+ * @param {unknown} value
+ * @param {DataView} view
+ * @param {number} curOffset
+ * @returns {number}
+ */
+function serializeNonArrayField(schemaMap, hashMap, field, value, view, curOffset) {
+  let innerOffset = 0
+
+  if (field.isComplex === true) {
+    // Look up the nested message definition
+    const nestedMsgdef = schemaMap.get(field.type)
+    if (!nestedMsgdef) {
+      throw new Error(`Nested message type ${field.type} not found in schema map`)
+    }
+
+    if (nestedMsgdef.naked !== true) {
+      const nestedSize = serializedNakedMessageSize(schemaMap, hashMap, nestedMsgdef, value)
+
+      view.setUint32(curOffset + innerOffset, 0x56444e54, true)
+      innerOffset += 4
+      view.setUint32(curOffset + innerOffset, HEADER_SIZE + nestedSize, true)
+      innerOffset += 4
+      view.setBigUint64(curOffset + innerOffset, nestedMsgdef.hashValue, true)
+      innerOffset += 8
+      view.setFloat64(curOffset + innerOffset, 0.0, true)
+      innerOffset += 8
+    }
+
+    innerOffset += serializeNakedMessage(schemaMap, hashMap, nestedMsgdef, value, view, curOffset)
+  } else {
+    switch (field.type) {
+      case "bool":
+      case "uint8":
+        view.setUint8(curOffset + innerOffset, value)
+        innerOffset += 1
+        break
+      case "int8":
+        view.setInt8(curOffset + innerOffset, value)
+        innerOffset += 1
+        break
+      case "uint16":
+        view.setUint16(curOffset + innerOffset, value, true)
+        innerOffset += 2
+        break
+      case "int16":
+        view.setInt16(curOffset + innerOffset, value, true)
+        innerOffset += 2
+        break
+      case "uint32":
+        view.setUint32(curOffset + innerOffset, value, true)
+        innerOffset += 4
+        break
+      case "int32":
+        view.setInt32(curOffset + innerOffset, value, true)
+        innerOffset += 4
+        break
+      case "float32":
+        view.setFloat32(curOffset + innerOffset, value, true)
+        innerOffset += 4
+        break
+      case "uint64":
+        view.setBigUint64(curOffset + innerOffset, value, true)
+        innerOffset += 8
+        break
+      case "int64":
+        view.setBigInt64(curOffset + innerOffset, value, true)
+        innerOffset += 8
+        break
+      case "float64":
+        view.setFloat64(curOffset + innerOffset, value, true)
+        innerOffset += 8
+        break
+      case "string": {
+        let length = field.upperBound
+        if (length == undefined) {
+          length = typeof value === "string" ? value.length : 0
+          view.setUint32(curOffset + innerOffset, length, true)
+          innerOffset += 4
+        }
+        if (value) {
+          const bytes = textEncoder.encode(value)
+          const byteOffset = view.byteOffset + curOffset + innerOffset
+          new Uint8Array(view.buffer, byteOffset, length).set(bytes)
+        }
+        innerOffset += length
+        break
+      }
+      default:
+        throw new Error(`Unsupported type ${field.type}`)
+    }
+  }
+
+  return innerOffset
+}
+
 module.exports.parseCBufSchema = parseCBufSchema
 module.exports.schemaMapToHashMap = schemaMapToHashMap
 module.exports.deserializeMessage = deserializeMessage
+module.exports.serializeMessage = serializeMessage
+module.exports.serializedMessageSize = serializedMessageSize
 
 /**
  * A promise a consumer can listen to, to wait for the module to finish loading.
