@@ -6,6 +6,16 @@ const Cbuf = require("../")
 
 const serialized = new Uint8Array(readFileSync(`${__dirname}/serialized.cb`))
 
+function arrayBuffersEqual(a, b) {
+  if (a instanceof ArrayBuffer) a = new Uint8Array(a, 0)
+  if (b instanceof ArrayBuffer) b = new Uint8Array(b, 0)
+  if (a.byteLength != b.byteLength) return false
+  for (let i = 0; i != a.byteLength; i++) {
+    if (a[i] != b[i]) return false
+  }
+  return true
+}
+
 describe("parsing", () => {
   it("waits until module is ready", (done) => {
     Cbuf.isLoaded.then(done)
@@ -154,8 +164,6 @@ namespace messages {
       ],
     })
 
-    // FIXME: This check is failing due to some leftover state or memory
-    // corruption in the wasm module
     // Make sure we can parse the schema repeatedly
     const result2 = Cbuf.parseCBufSchema(schema)
     assert.equal(result2.error, undefined)
@@ -272,5 +280,49 @@ describe("deserializeMessage", () => {
     assert.equal(result.size, 25)
     assert.equal(result.variant, 1)
     assert.equal(result.message.foo.x, 42)
+  })
+})
+
+describe("serializeMessage", () => {
+  it("round-trips a self-describing .cb buffer", () => {
+    let offset = 0
+    const result = Cbuf.deserializeMessage(new Map(), new Map(), serialized, offset)
+
+    const result2 = Cbuf.parseCBufSchema(result.message.msg_meta)
+    const schemaMap = result2.schema
+    const hashMap = Cbuf.schemaMapToHashMap(schemaMap)
+    const result3 = Cbuf.deserializeMessage(schemaMap, hashMap, serialized, offset + result.size)
+
+    const serialized1 = Cbuf.serializeMessage(schemaMap, hashMap, result)
+    assert.equal(serialized1.byteLength, 419)
+    assert(
+      arrayBuffersEqual(serialized1, serialized.slice(offset, offset + serialized1.byteLength)),
+    )
+
+    offset += result.size
+
+    const serialized2 = Cbuf.serializeMessage(schemaMap, hashMap, result3)
+    assert.equal(serialized2.byteLength, 104)
+    assert(
+      arrayBuffersEqual(serialized2, serialized.slice(offset, offset + serialized2.byteLength)),
+    )
+
+    offset += result3.size
+
+    const result4 = Cbuf.deserializeMessage(schemaMap, hashMap, serialized, offset)
+    const serialized3 = Cbuf.serializeMessage(schemaMap, hashMap, result4)
+    assert.equal(serialized3.byteLength, 1357)
+    assert(
+      arrayBuffersEqual(serialized3, serialized.slice(offset, offset + serialized3.byteLength)),
+    )
+
+    offset += result4.size
+
+    const result5 = Cbuf.deserializeMessage(schemaMap, hashMap, serialized, offset)
+    const serialized4 = Cbuf.serializeMessage(schemaMap, hashMap, result5)
+    assert.equal(serialized4.byteLength, 71)
+    assert(
+      arrayBuffersEqual(serialized4, serialized.slice(offset, offset + serialized4.byteLength)),
+    )
   })
 })
