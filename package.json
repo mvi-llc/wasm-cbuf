@@ -21,12 +21,12 @@
     "test": "mocha"
   },
   "devDependencies": {
-    "eslint": "8.34.0",
+    "eslint": "8.52.0",
     "mocha": "10.2.0",
-    "prettier": "2.8.4",
+    "prettier": "3.0.3",
     "typescript": "5.2.2"
   },
   "dependencies": {
-    "@foxglove/message-definition": "^0.2.0"
+    "@foxglove/message-definition": "^0.3.1"
   }
 }
