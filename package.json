@@ -1,6 +1,6 @@
 {
   "name": "wasm-cbuf",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "main": "dist/index.js",
   "description": "Verdant CBUF IDL and message serialization compiled to WebAssembly",
   "license": "Apache-2.0",
