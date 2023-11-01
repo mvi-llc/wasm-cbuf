@@ -13,7 +13,7 @@ This library provides a WebAssembly build of cbuf wrapped in a TypeScript/JavaSc
 Here's an example of parsing a `.cbuf` schema. Note that this does not handle `#include` statements; you must replace all includes with the contents of the included file before calling this method.
 
 ```ts
-import Cbuf from "wasm-cbuf"
+import * as Cbuf from "wasm-cbuf"
 
 async function main() {
   await Cbuf.isLoaded
