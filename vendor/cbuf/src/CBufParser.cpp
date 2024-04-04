@@ -59,7 +59,13 @@ static bool computeElementTypeSize(ast_element* elem, SymbolTable* symtable, Int
         if (!bret) return false;
         csize = inner_st->csize;
       }
+      break;
     }
+    default:
+      if (interp) {
+        interp->Error("Unknown type %d\n", elem->type);
+      }
+      return false;
   }
   return true;
 }
@@ -499,6 +505,8 @@ bool process_element_conversion(const ast_element* elem, u8*& bin_buffer, size_t
         }
         break;
       }
+      default:
+        return false;
     }
     dst_elem_buf += dst_elem->typesize;
     dst_elem_size -= dst_elem->typesize;
@@ -1104,6 +1112,8 @@ bool CBufParser::PrintInternal(const ast_struct* st, const std::string& prefix) 
 
         break;
       }
+      default:
+        return false;
     }
   }
   return success;
@@ -1189,6 +1199,8 @@ bool CBufParser::SkipElementInternal(const ast_element* elem) {
 
       break;
     }
+    default:
+      return false;
   }
   return success;
 }

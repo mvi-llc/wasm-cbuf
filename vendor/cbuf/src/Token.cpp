@@ -132,6 +132,7 @@ const char* TokenTypeToStr(TOKEN_TYPE type) {
     CASE_TOKEN_TYPE(TK_CLOSE_BLOCK_COMMENT);
     CASE_TOKEN_TYPE(TK_LINE_COMMENT);
     case TK_INVALID:
+    default:
       break;
   }
   return "UNKNOWN";

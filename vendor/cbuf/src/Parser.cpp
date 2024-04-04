@@ -47,6 +47,8 @@ static const char* ValueTypeToStr(ValueType vt) {
     CASE_VAL_TYPE(IDENTIFIER);
     CASE_VAL_TYPE(BOOL);
     CASE_VAL_TYPE(ARRAY);
+    default:
+      return "UNKNOWN_VALUE_TYPE";
   }
 #ifdef __llvm__
   __builtin_debugtrap();

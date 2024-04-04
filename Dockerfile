@@ -1,4 +1,4 @@
-FROM emscripten/emsdk:3.1.28
+FROM emscripten/emsdk:3.1.56
 
 # Install clang-format
 RUN apt-get update && \

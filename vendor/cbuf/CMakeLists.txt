@@ -50,6 +50,7 @@ else()
     -Wno-missing-noreturn \
     -Wno-switch-enum \
     -Wno-unreachable-code \
+    -Wno-unsafe-buffer-usage \
     -Wno-shorten-64-to-32 \
     -Wno-zero-as-null-pointer-constant \
     -Wno-sign-compare \
